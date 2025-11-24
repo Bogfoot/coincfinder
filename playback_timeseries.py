@@ -37,48 +37,48 @@ def main():
         raise SystemExit("timeseries.csv missing 'second' column.")
 
     # Determine available channels
-    has_da = {"DD", "AA", "DA", "AD"} <= set(df.columns)
-    for col in ["HH", "VV", "HV", "VH", "total_visibility", "total_qber"]:
+    required = ["HH", "VV", "HV", "VH", "total_visibility", "total_qber"]
+    for col in required:
         if col not in df.columns:
             raise SystemExit(f"timeseries.csv missing required column: {col}")
+    has_da = {"DD", "AA", "DA", "AD"} <= set(df.columns)
 
     t_all = df["second"].to_numpy()
     data = {col: df[col].to_numpy() for col in df.columns if col != "second"}
 
-    # Matplotlib setup
-    fig = plt.figure(figsize=(12, 7))
-    ax_coinc = fig.add_subplot(2, 1, 1)
+    # Matplotlib setup (single figure with two rows)
+    fig = plt.figure(figsize=(12, 8))
+    gs = fig.add_gridspec(2, 1, height_ratios=[2, 1])
+    ax_coinc = fig.add_subplot(gs[0, 0])
 
     # Combined coincidences (HV + DA if available)
     line_hh, = ax_coinc.plot([], [], label="HH", color="tab:blue")
     line_vv, = ax_coinc.plot([], [], label="VV", color="tab:green")
     line_hv, = ax_coinc.plot([], [], label="HV", color="tab:orange")
     line_vh, = ax_coinc.plot([], [], label="VH", color="tab:red")
+    line_dd = line_aa = line_da = line_ad = None
     if has_da:
         line_dd, = ax_coinc.plot([], [], label="DD", color="tab:purple")
         line_aa, = ax_coinc.plot([], [], label="AA", color="tab:brown")
         line_da, = ax_coinc.plot([], [], label="DA", color="tab:pink")
         line_ad, = ax_coinc.plot([], [], label="AD", color="tab:gray")
-    else:
-        line_dd = line_aa = line_da = line_ad = None
 
     ax_coinc.set_ylabel("Coincidences")
     ax_coinc.set_title("Coincidences (same & cross)")
     ax_coinc.grid(True, alpha=0.3)
     ax_coinc.legend()
 
-    # Total visibility/QBER twin axes
-    fig_tot, ax_tot = plt.subplots(figsize=(10, 4))
+    # Total visibility/QBER (same figure, second row, twin y)
+    ax_tot = fig.add_subplot(gs[1, 0])
+    ax_q = ax_tot.twinx()
     line_vis, = ax_tot.plot([], [], label="Total visibility", color="tab:blue")
+    line_q, = ax_q.plot([], [], label="Total QBER", color="tab:red", linestyle="--")
     ax_tot.set_ylabel("Visibility (%)", color="tab:blue")
+    ax_q.set_ylabel("QBER (%)", color="tab:red")
     ax_tot.tick_params(axis="y", labelcolor="tab:blue")
+    ax_q.tick_params(axis="y", labelcolor="tab:red")
     ax_tot.grid(True, alpha=0.3)
     ax_tot.set_xlabel("Global seconds")
-
-    ax_q = ax_tot.twinx()
-    line_q, = ax_q.plot([], [], label="Total QBER", color="tab:red", linestyle="--")
-    ax_q.set_ylabel("QBER (%)", color="tab:red")
-    ax_q.tick_params(axis="y", labelcolor="tab:red")
 
     def update(frame):
         start = max(0, frame - args.window + 1)
