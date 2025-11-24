@@ -46,40 +46,26 @@ def main():
     data = {col: df[col].to_numpy() for col in df.columns if col != "second"}
 
     # Matplotlib setup
-    fig = plt.figure(figsize=(12, 9))
-    gs = fig.add_gridspec(3 if has_da else 2, 1, height_ratios=[1, 1, 1] if has_da else [1, 1])
+    fig = plt.figure(figsize=(12, 7))
+    ax_coinc = fig.add_subplot(2, 1, 1)
 
-    ax_hv = fig.add_subplot(gs[0, 0])
-    ax_hv_cross = fig.add_subplot(gs[1, 0])
-    ax_da = ax_da_cross = None
+    # Combined coincidences (HV + DA if available)
+    line_hh, = ax_coinc.plot([], [], label="HH", color="tab:blue")
+    line_vv, = ax_coinc.plot([], [], label="VV", color="tab:green")
+    line_hv, = ax_coinc.plot([], [], label="HV", color="tab:orange")
+    line_vh, = ax_coinc.plot([], [], label="VH", color="tab:red")
     if has_da:
-        ax_da = fig.add_subplot(gs[2, 0])
+        line_dd, = ax_coinc.plot([], [], label="DD", color="tab:purple")
+        line_aa, = ax_coinc.plot([], [], label="AA", color="tab:brown")
+        line_da, = ax_coinc.plot([], [], label="DA", color="tab:pink")
+        line_ad, = ax_coinc.plot([], [], label="AD", color="tab:gray")
+    else:
+        line_dd = line_aa = line_da = line_ad = None
 
-    # HV same / cross
-    line_hh, = ax_hv.plot([], [], label="HH (same)", color="tab:blue")
-    line_vv, = ax_hv.plot([], [], label="VV (same)", color="tab:green")
-    ax_hv.set_ylabel("Coincidences")
-    ax_hv.set_title("HV basis (same)")
-    ax_hv.legend()
-    ax_hv.grid(True, alpha=0.3)
-
-    line_hv, = ax_hv_cross.plot([], [], label="HV (cross)", color="tab:orange")
-    line_vh, = ax_hv_cross.plot([], [], label="VH (cross)", color="tab:red")
-    ax_hv_cross.set_ylabel("Coincidences")
-    ax_hv_cross.set_title("HV basis (cross)")
-    ax_hv_cross.grid(True, alpha=0.3)
-    ax_hv_cross.legend()
-
-    # DA same/cross if present
-    if has_da:
-        line_dd, = ax_da.plot([], [], label="DD (same)", color="tab:blue")
-        line_aa, = ax_da.plot([], [], label="AA (same)", color="tab:green")
-        line_da, = ax_da.plot([], [], label="DA (cross)", color="tab:orange")
-        line_ad, = ax_da.plot([], [], label="AD (cross)", color="tab:red")
-        ax_da.set_ylabel("Coincidences")
-        ax_da.set_title("DA basis")
-        ax_da.grid(True, alpha=0.3)
-        ax_da.legend()
+    ax_coinc.set_ylabel("Coincidences")
+    ax_coinc.set_title("Coincidences (same & cross)")
+    ax_coinc.grid(True, alpha=0.3)
+    ax_coinc.legend()
 
     # Total visibility/QBER twin axes
     fig_tot, ax_tot = plt.subplots(figsize=(10, 4))
@@ -97,56 +83,70 @@ def main():
     def update(frame):
         start = max(0, frame - args.window + 1)
         end = frame + 1
+        if end <= start:
+            return ()
         t = t_all[start:end]
+        xlo, xhi = t[0] - 0.5, t[-1] + 0.5
 
-        # HV
-        line_hh.set_data(t, data["HH"][start:end])
-        line_vv.set_data(t, data["VV"][start:end])
-        ax_hv.set_xlim(t[0], t[-1])
-        y_max = max(np.nanmax(data["HH"][start:end]), np.nanmax(data["VV"][start:end]), 1)
-        ax_hv.set_ylim(0, y_max * 1.1)
-
-        line_hv.set_data(t, data["HV"][start:end])
-        line_vh.set_data(t, data["VH"][start:end])
-        ax_hv_cross.set_xlim(t[0], t[-1])
-        y_max2 = max(np.nanmax(data["HV"][start:end]), np.nanmax(data["VH"][start:end]), 1)
-        ax_hv_cross.set_ylim(0, y_max2 * 1.1)
-        ax_hv_cross.set_xlabel("Global seconds")
-
+        # Coincidences
+        seg = {k: data[k][start:end] for k in data.keys()}
+        line_hh.set_data(t, seg["HH"])
+        line_vv.set_data(t, seg["VV"])
+        line_hv.set_data(t, seg["HV"])
+        line_vh.set_data(t, seg["VH"])
         if has_da:
-            line_dd.set_data(t, data["DD"][start:end])
-            line_aa.set_data(t, data["AA"][start:end])
-            line_da.set_data(t, data["DA"][start:end])
-            line_ad.set_data(t, data["AD"][start:end])
-            ax_da.set_xlim(t[0], t[-1])
-            y_max3 = max(
-                np.nanmax(data["DD"][start:end]),
-                np.nanmax(data["AA"][start:end]),
-                np.nanmax(data["DA"][start:end]),
-                np.nanmax(data["AD"][start:end]),
-                1,
-            )
-            ax_da.set_ylim(0, y_max3 * 1.1)
-            ax_da.set_xlabel("Global seconds")
+            line_dd.set_data(t, seg["DD"])
+            line_aa.set_data(t, seg["AA"])
+            line_da.set_data(t, seg["DA"])
+            line_ad.set_data(t, seg["AD"])
+
+        y_candidates = [
+            np.nanmax(seg["HH"]), np.nanmax(seg["VV"]),
+            np.nanmax(seg["HV"]), np.nanmax(seg["VH"])
+        ]
+        if has_da:
+            y_candidates += [
+                np.nanmax(seg["DD"]), np.nanmax(seg["AA"]),
+                np.nanmax(seg["DA"]), np.nanmax(seg["AD"])
+            ]
+        y_max = max([c for c in y_candidates if np.isfinite(c)] + [1])
+        ax_coinc.set_xlim(xlo, xhi)
+        ax_coinc.set_ylim(0, y_max * 1.1)
+        ax_coinc.set_xlabel("Global seconds")
+
+        # Update legend labels with latest values
+        latest = {k: seg[k][-1] if len(seg[k]) else np.nan for k in seg}
+        line_hh.set_label(f"HH ({latest.get('HH', float('nan')):.0f})")
+        line_vv.set_label(f"VV ({latest.get('VV', float('nan')):.0f})")
+        line_hv.set_label(f"HV ({latest.get('HV', float('nan')):.0f})")
+        line_vh.set_label(f"VH ({latest.get('VH', float('nan')):.0f})")
+        if has_da:
+            line_dd.set_label(f"DD ({latest.get('DD', float('nan')):.0f})")
+            line_aa.set_label(f"AA ({latest.get('AA', float('nan')):.0f})")
+            line_da.set_label(f"DA ({latest.get('DA', float('nan')):.0f})")
+            line_ad.set_label(f"AD ({latest.get('AD', float('nan')):.0f})")
+        ax_coinc.legend(loc="upper left", ncol=2)
 
         # Total vis/QBER
-        vis = data["total_visibility"][start:end] * 100.0
-        qber = data["total_qber"][start:end] * 100.0
+        vis = seg["total_visibility"] * 100.0
+        qber = seg["total_qber"] * 100.0
         line_vis.set_data(t, vis)
         line_q.set_data(t, qber)
-        ax_tot.set_xlim(t[0], t[-1])
-        if len(vis) > 0:
+        ax_tot.set_xlim(xlo, xhi)
+        if len(vis):
             ax_tot.set_ylim(min(np.nanmin(vis), 0) - 5, max(np.nanmax(vis), 0) + 5)
             ax_q.set_ylim(min(np.nanmin(qber), 0) - 5, max(np.nanmax(qber), 0) + 5)
 
-        return (
-            line_hh,
-            line_vv,
-            line_hv,
-            line_vh,
-            line_vis,
-            line_q,
-        )
+        # Update legend labels with latest vis/qber
+        if len(vis):
+            line_vis.set_label(f"Total visibility ({vis[-1]:.2f}%)")
+        if len(qber):
+            line_q.set_label(f"Total QBER ({qber[-1]:.2f}%)")
+        lines1, labels1 = ax_tot.get_legend_handles_labels()
+        lines2, labels2 = ax_q.get_legend_handles_labels()
+        ax_tot.legend(lines1 + lines2, labels1 + labels2, loc="upper right")
+
+        return ()
 
     ani = animation.FuncAnimation(
         fig,
