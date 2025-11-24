@@ -46,7 +46,11 @@ CoincFinder <csv_or_bin_file> <coinc_window_ps> <delay_start_ns> <delay_end_ns> 
 
 Example:
 ```
-CoincFinder data/data.bin 250 8 12 0.01 0 600
+./CoincFinder data/data.bin 250 8 12 0.01 0 600
+```
+or
+```
+CoincFinder.exe data/data.bin 250 8 12 0.01 0 600
 ```
 
 Parameters:
