@@ -137,9 +137,9 @@ int main(int argc, char *argv[]) {
   std::atomic<int> jobsDone{0};
 
 #pragma omp parallel for
-  for (size_t p = 0; p < activePairs.size(); ++p) {
-    const int ch1 = activePairs[p].first;
-    const int ch2 = activePairs[p].second;
+  for (int p = 0; p < static_cast<int>(activePairs.size()); ++p) {
+    const int ch1 = activePairs[static_cast<size_t>(p)].first;
+    const int ch2 = activePairs[static_cast<size_t>(p)].second;
     const Singles &singles1 = singlesMap.at(ch1);
     const Singles &singles2 = singlesMap.at(ch2);
 
