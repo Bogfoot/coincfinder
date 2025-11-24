@@ -1,0 +1,2 @@
+/usr/bin/ar qc libcoincfinder_core.a CMakeFiles/coincfinder_core.dir/src/Coincidences.cpp.o CMakeFiles/coincfinder_core.dir/src/ReadCSV.cpp.o CMakeFiles/coincfinder_core.dir/src/RollingSingles.cpp.o
+/usr/bin/ranlib libcoincfinder_core.a

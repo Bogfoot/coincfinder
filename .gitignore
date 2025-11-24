@@ -1,0 +1,43 @@
+# Build artifacts
+/cpp/build/
+/build/
+/dist/
+docs/doxygen/
+docs/doxygen/
+*.egg-info
+*.pyc
+__pycache__/
+
+# Virtual environments
+.venv/
+env/
+
+# Qt/IDE artifacts
+.idea/
+.vscode/
+
+# Generated binaries
+coincfinder/build/
+*.so
+*.pyd
+*.dll
+*.lib
+*.exe
+
+# Data/logs
+*.log
+*.bin
+*.csv
+/2025-11-19_13_05_03_MDP_UVTP_exp_time_s_5.bin
+
+# Repo-local files
+AGENTS.md
+qber_live_log.csv
+pyproject.toml
+plotter_settings.json
+Makefile
+CMakeCache.txt 
+cmake_install.cmake
+# Ignore Python package and scripts
+EPC/
+qlaiblib/
