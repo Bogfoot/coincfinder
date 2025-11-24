@@ -7,9 +7,11 @@ if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
 endif()
 
-# Force multi-config generators (Visual Studio, Xcode) to only offer Release.
+# Prefer Release on multi-config generators; keep other configs available.
 if(CMAKE_CONFIGURATION_TYPES)
-    set(CMAKE_CONFIGURATION_TYPES "Release" CACHE STRING "Configs" FORCE)
+    list(INSERT CMAKE_CONFIGURATION_TYPES 0 "Release")
+    list(REMOVE_DUPLICATES CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_CONFIGURATION_TYPES "${CMAKE_CONFIGURATION_TYPES}" CACHE STRING "Configs" FORCE)
 endif()
 
 set(CMAKE_CXX_STANDARD 20)
@@ -43,10 +45,11 @@ endif()
 add_executable(CoincFinder src/CoincFinder.cpp)
 target_link_libraries(CoincFinder PRIVATE coincfinder)
 
-# Copy helper Python scripts next to the built artifacts.
+# Copy helper Python scripts next to the built artifacts after building the exe.
 file(GLOB PY_SCRIPTS "${PROJECT_SOURCE_DIR}/*.py")
 if(PY_SCRIPTS)
-    add_custom_command(TARGET CoincFinder POST_BUILD
+    add_custom_target(copy_python ALL
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${PY_SCRIPTS} ${CMAKE_BINARY_DIR}
         COMMENT "Copying Python helper scripts to build directory")
+    add_dependencies(copy_python CoincFinder)
 endif()
