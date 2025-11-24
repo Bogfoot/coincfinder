@@ -1,4 +1,15 @@
 """
+Summarize CoincFinder delay-scan folders:
+- Computes HV/DA visibility & QBER
+- Computes total visibility = mean(HV_vis, DA_vis) when 8-detector
+- Computes total QBER     = mean(HV_qber, DA_qber) when 8-detector
+- Reports total coincidences per folder (HV, DA, overall)
+- Plots:
+    * HV & DA visibility together
+    * HV & DA QBER together
+    * Total visibility & total QBER on twin axes
+    * Total coincidences per folder
+- Saves summary table to summary.csv
 Usage examples (run next to CoincFinder.exe or from project root):
   python summarize_delay_folders.py
   python summarize_delay_folders.py --data-dir C:/path/to/Delay_Scan_Data
@@ -102,11 +113,14 @@ def compute_metrics(base: Path, seconds: Iterable[int], same_pairs, opp_pairs):
         else:
             vis.append((C_same - C_opp) / total)
             qber.append(C_opp / total)
+    same_arr = np.array(same_counts, dtype=float)
+    opp_arr = np.array(opp_counts, dtype=float)
     return (
         np.array(vis, dtype=float),
         np.array(qber, dtype=float),
-        np.array(same_counts, dtype=float),
-        np.array(opp_counts, dtype=float),
+        same_arr,
+        opp_arr,
+        float(np.nansum(same_arr) + np.nansum(opp_arr)),
     )
 
 # Main aggregation
@@ -118,11 +132,11 @@ def summarize_folder(folder: Path, use_setup4: bool):
     if not seconds:
         return None  # no data
 
-    vis_HV, q_HV, same_HV_counts, opp_HV_counts = compute_metrics(folder, seconds, same_HV, opp_HV)
+    vis_HV, q_HV, same_HV_counts, opp_HV_counts, total_HV = compute_metrics(folder, seconds, same_HV, opp_HV)
 
     vis_DA = q_DA = same_DA_counts = opp_DA_counts = np.array([])
     if not use_setup4:
-        vis_DA, q_DA, same_DA_counts, opp_DA_counts = compute_metrics(folder, seconds, same_DA, opp_DA)
+        vis_DA, q_DA, same_DA_counts, opp_DA_counts, total_DA = compute_metrics(folder, seconds, same_DA, opp_DA)
 
     summary = {
         "folder": folder.name,
@@ -133,6 +147,7 @@ def summarize_folder(folder: Path, use_setup4: bool):
         "HV_qber_std": np.nanstd(q_HV),
         "HV_same_mean": np.nanmean(same_HV_counts),
         "HV_opp_mean": np.nanmean(opp_HV_counts),
+        "HV_coinc_total": float(total_HV),
     }
     if not use_setup4:
         summary.update({
@@ -142,7 +157,30 @@ def summarize_folder(folder: Path, use_setup4: bool):
             "DA_qber_std": np.nanstd(q_DA),
             "DA_same_mean": np.nanmean(same_DA_counts),
             "DA_opp_mean": np.nanmean(opp_DA_counts),
+            "DA_coinc_total": float(total_DA),
         })
+        # Total visibility/QBER as mean of HV & DA
+        hv_vis = summary["HV_vis_mean"]
+        da_vis = summary["DA_vis_mean"]
+        hv_vis_std = summary["HV_vis_std"]
+        da_vis_std = summary["DA_vis_std"]
+        summary["Total_vis_mean"] = np.nanmean([hv_vis, da_vis])
+        summary["Total_vis_std"] = np.sqrt((hv_vis_std**2 + da_vis_std**2) / 4.0)
+
+        hv_q = summary["HV_qber_mean"]
+        da_q = summary["DA_qber_mean"]
+        hv_q_std = summary["HV_qber_std"]
+        da_q_std = summary["DA_qber_std"]
+        summary["Total_qber_mean"] = np.nanmean([hv_q, da_q])
+        summary["Total_qber_std"] = np.sqrt((hv_q_std**2 + da_q_std**2) / 4.0)
+
+        summary["Total_coinc_total"] = float(total_HV + total_DA)
+    else:
+        summary["Total_vis_mean"] = summary["HV_vis_mean"]
+        summary["Total_vis_std"] = summary["HV_vis_std"]
+        summary["Total_qber_mean"] = summary["HV_qber_mean"]
+        summary["Total_qber_std"] = summary["HV_qber_std"]
+        summary["Total_coinc_total"] = summary["HV_coinc_total"]
     return summary
 
 
@@ -200,8 +238,13 @@ def main():
         raise SystemExit("No delay scan data found.")
 
     df = pd.DataFrame(summaries)
+
+    # Save summary CSV (comma-separated) into the data directory
+    out_csv = args.data_dir / "summary.csv"
+    df.to_csv(out_csv, index=False)
     print("\n=== Per-folder summary ===")
     print(df.to_string(index=False))
+    print(f"\nSummary saved to: {out_csv}")
 
     if args.no_plots:
         return
@@ -209,16 +252,41 @@ def main():
     labels = df["folder"].tolist()
     x = list(range(len(labels)))
 
-    fig, axes = plt.subplots(2, 2 if args.setup4 else 3, figsize=(12, 7), squeeze=False)
-    plot_series(axes[0, 0], x, labels, df["HV_vis_mean"].tolist(), "HV Visibility", "Visibility (%)", to_percent=True)
-    plot_series(axes[1, 0], x, labels, df["HV_qber_mean"].tolist(), "HV QBER", "QBER (%)", to_percent=True)
+    if args.setup4:
+        fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+        plot_series(axes[0], x, labels, df["HV_vis_mean"].tolist(), "HV Visibility", "Visibility (%)", to_percent=True)
+        plot_series(axes[1], x, labels, df["HV_qber_mean"].tolist(), "HV QBER", "QBER (%)", to_percent=True)
+        plot_series(axes[2], x, labels, df["Total_coinc_total"].tolist(), "Total coincidences", "Counts")
+    else:
+        fig, axes = plt.subplots(1, 4, figsize=(22, 5))
+        plot_series(axes[0], x, labels, df["HV_vis_mean"].tolist(), "HV vs DA Visibility", "Visibility (%)", to_percent=True)
+        axes[0].plot(x, np.array(df["DA_vis_mean"], float) * 100, marker="s", linestyle="--", color="tab:orange", label="DA visibility")
+        axes[0].legend()
 
-    plot_series(axes[0, 1], x, labels, df["HV_same_mean"].tolist(), "HV Same coincidences", "Counts")
-    plot_series(axes[1, 1], x, labels, df["HV_opp_mean"].tolist(), "HV Opp coincidences", "Counts")
+        plot_series(axes[1], x, labels, df["HV_qber_mean"].tolist(), "HV vs DA QBER", "QBER (%)", to_percent=True)
+        axes[1].plot(x, np.array(df["DA_qber_mean"], float) * 100, marker="s", linestyle="--", color="tab:orange", label="DA QBER")
+        axes[1].legend()
 
-    if not args.setup4:
-        plot_series(axes[0, 2], x, labels, df["DA_vis_mean"].tolist(), "DA Visibility", "Visibility (%)", to_percent=True)
-        plot_series(axes[1, 2], x, labels, df["DA_qber_mean"].tolist(), "DA QBER", "QBER (%)", to_percent=True)
+        # Total visibility & QBER on twin axes
+        ax_tot = axes[2]
+        ax_tot.plot(x, np.array(df["Total_vis_mean"], float) * 100, marker="o", linestyle="-", color="tab:blue", label="Total visibility")
+        ax_tot.set_ylabel("Total visibility (%)", color="tab:blue")
+        ax_tot.tick_params(axis="y", labelcolor="tab:blue")
+        ax_tot.set_xticks(x)
+        ax_tot.set_xticklabels(labels, rotation=45, ha="right")
+        ax_tot.grid(True, alpha=0.3)
+        ax_tot_twin = ax_tot.twinx()
+        ax_tot_twin.plot(x, np.array(df["Total_qber_mean"], float) * 100, marker="s", linestyle="--", color="tab:red", label="Total QBER")
+        ax_tot_twin.set_ylabel("Total QBER (%)", color="tab:red")
+        ax_tot_twin.tick_params(axis="y", labelcolor="tab:red")
+        ax_tot.set_title("Total visibility & QBER")
+        # combine legends
+        lines, labels_ = ax_tot.get_legend_handles_labels()
+        lines2, labels2_ = ax_tot_twin.get_legend_handles_labels()
+        ax_tot.legend(lines + lines2, labels_ + labels2_, loc="upper left")
+
+        # Total coincidences
+        plot_series(axes[3], x, labels, df["Total_coinc_total"].tolist(), "Total coincidences", "Counts")
 
     plt.tight_layout()
     plt.show()
