@@ -42,3 +42,11 @@ endif()
 
 add_executable(CoincFinder src/CoincFinder.cpp)
 target_link_libraries(CoincFinder PRIVATE coincfinder)
+
+# Copy helper Python scripts next to the built artifacts.
+file(GLOB PY_SCRIPTS "${PROJECT_SOURCE_DIR}/*.py")
+if(PY_SCRIPTS)
+    add_custom_command(TARGET CoincFinder POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${PY_SCRIPTS} ${CMAKE_BINARY_DIR}
+        COMMENT "Copying Python helper scripts to build directory")
+endif()
