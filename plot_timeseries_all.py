@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import json
 from typing import Dict, Iterable, List, Tuple
 
 import matplotlib.pyplot as plt
@@ -169,6 +170,21 @@ def main():
 
             time_axis.append(t)
             t += 1
+
+    # Save processed time-series so it doesn't need recomputation.
+    save_path = data_dir / "timeseries.csv"
+    records = {"second": time_axis}
+    for key, series in counts.items():
+        # Only include series that were actually populated
+        if series:
+            records[key] = series
+    records["total_visibility"] = vis_total
+    records["total_qber"] = qber_total
+    pd.DataFrame(records).to_csv(save_path, index=False)
+
+    delay_path = data_dir / "timeseries_delays.json"
+    with delay_path.open("w") as f:
+        json.dump(delays, f, indent=2)
 
     # ---------------------------
     # Plots
