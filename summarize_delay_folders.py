@@ -11,6 +11,9 @@ import argparse
 from pathlib import Path
 import os
 import concurrent.futures
+import itertools
+import threading
+import time
 from typing import Iterable, List, Tuple
 
 import matplotlib.pyplot as plt
@@ -170,8 +173,26 @@ def main():
 
     # Parallelize per-folder summaries (I/O bound; threads are fine).
     workers = None if args.jobs <= 0 else args.jobs
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
-        results = list(ex.map(lambda f: summarize_folder(f, args.setup4), folders))
+    stop_spinner = threading.Event()
+
+    def spinner():
+        for ch in itertools.cycle("|/-\\"):
+            if stop_spinner.is_set():
+                break
+            print(f"\rSummarizing folders... {ch}", end="", flush=True)
+            time.sleep(0.1)
+        # clear line
+        print("\r" + " " * 40 + "\r", end="", flush=True)
+
+    spinner_thread = threading.Thread(target=spinner, daemon=True)
+    spinner_thread.start()
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+            results = list(ex.map(lambda f: summarize_folder(f, args.setup4), folders))
+    finally:
+        stop_spinner.set()
+        spinner_thread.join()
 
     summaries = [s for s in results if s]
 
