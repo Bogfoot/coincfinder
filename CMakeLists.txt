@@ -51,7 +51,7 @@ if(BUILD_PYTHON_BINDINGS)
             GIT_TAG        v2.12.0
         )
         FetchContent_MakeAvailable(pybind11)
-        find_package(pybind11 CONFIG REQUIRED)
+        set(pybind11_FOUND TRUE)
     endif()
 
     pybind11_add_module(coincfinder MODULE src/bindings.cpp)
