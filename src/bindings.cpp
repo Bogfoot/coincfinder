@@ -1,6 +1,7 @@
 #include <cmath>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/numpy.h>
 #include <span>
 
 #include "Coincidences.h"
@@ -91,6 +92,24 @@ PYBIND11_MODULE(coincfinder, m) {
       py::arg("delay_ps"), "Count coincidences (all arguments in picoseconds)");
 
   m.def(
+      "count_coincidences_with_delay_np",
+      [](py::array_t<long long, py::array::c_style | py::array::forcecast> ch1,
+         py::array_t<long long, py::array::c_style | py::array::forcecast> ch2,
+         double coinc_window_ps, double delay_ps) {
+        const auto coinc_window_ll =
+            static_cast<long long>(std::llround(coinc_window_ps));
+        const auto delay_ll = static_cast<long long>(std::llround(delay_ps));
+        auto b1 = ch1.unchecked<1>();
+        auto b2 = ch2.unchecked<1>();
+        std::span<const long long> s1(b1.data(0), b1.size());
+        std::span<const long long> s2(b2.data(0), b2.size());
+        return countCoincidencesWithDelay(s1, s2, coinc_window_ll, delay_ll);
+      },
+      py::arg("ch1"), py::arg("ch2"), py::arg("coinc_window_ps"),
+      py::arg("delay_ps"),
+      "Count coincidences (picoseconds) accepting NumPy arrays without copying when C-contiguous.");
+
+  m.def(
       "collect_coincidences_with_delay_ps",
       [](const std::vector<long long> &ch1, const std::vector<long long> &ch2,
          double coinc_window_ps, double delay_ps) {
@@ -151,6 +170,30 @@ PYBIND11_MODULE(coincfinder, m) {
       "Compute coincidences for delay range (all delays in picoseconds)");
 
   m.def(
+      "compute_coincidences_for_range_np",
+      [](py::array_t<long long, py::array::c_style | py::array::forcecast> ch1,
+         py::array_t<long long, py::array::c_style | py::array::forcecast> ch2,
+         double coinc_window_ps, double delay_start_ps, double delay_end_ps,
+         double delay_step_ps) {
+        auto b1 = ch1.unchecked<1>();
+        auto b2 = ch2.unchecked<1>();
+        std::span<const long long> s1(b1.data(0), b1.size());
+        std::span<const long long> s2(b2.data(0), b2.size());
+        std::vector<std::pair<float, int>> results;
+        computeCoincidencesForRange(
+            s1, s2,
+            static_cast<long long>(std::llround(coinc_window_ps)),
+            static_cast<long long>(std::llround(delay_start_ps)),
+            static_cast<long long>(std::llround(delay_end_ps)),
+            static_cast<long long>(std::llround(delay_step_ps)), results);
+        return results;
+      },
+      py::arg("ch1"), py::arg("ch2"), py::arg("coinc_window_ps"),
+      py::arg("delay_start_ps"), py::arg("delay_end_ps"),
+      py::arg("delay_step_ps"),
+      "Compute coincidences for delay range (picoseconds) accepting NumPy arrays.");
+
+  m.def(
       "compute_coincidences_for_range_hist_ps",
       [](const std::vector<long long> &ch1, const std::vector<long long> &ch2,
          double coinc_window_ps, double delay_start_ps, double delay_end_ps,
@@ -170,6 +213,30 @@ PYBIND11_MODULE(coincfinder, m) {
       "Histogram-based coincidence scan (all delays in picoseconds)");
 
   m.def(
+      "compute_coincidences_for_range_hist_np",
+      [](py::array_t<long long, py::array::c_style | py::array::forcecast> ch1,
+         py::array_t<long long, py::array::c_style | py::array::forcecast> ch2,
+         double coinc_window_ps, double delay_start_ps, double delay_end_ps,
+         double delay_step_ps) {
+        auto b1 = ch1.unchecked<1>();
+        auto b2 = ch2.unchecked<1>();
+        std::span<const long long> s1(b1.data(0), b1.size());
+        std::span<const long long> s2(b2.data(0), b2.size());
+        std::vector<std::pair<float, int>> results;
+        computeCoincidencesForRangeHistogram(
+            s1, s2,
+            static_cast<long long>(std::llround(coinc_window_ps)),
+            static_cast<long long>(std::llround(delay_start_ps)),
+            static_cast<long long>(std::llround(delay_end_ps)),
+            static_cast<long long>(std::llround(delay_step_ps)), results);
+        return results;
+      },
+      py::arg("ch1"), py::arg("ch2"), py::arg("coinc_window_ps"),
+      py::arg("delay_start_ps"), py::arg("delay_end_ps"),
+      py::arg("delay_step_ps"),
+      "Histogram-based coincidence scan (picoseconds) accepting NumPy arrays.");
+
+  m.def(
       "count_nfold_coincidences",
       [](const std::vector<std::vector<long long>> &channels,
          double coinc_window_ps, const std::vector<long long> &offsets_ps) {
@@ -185,6 +252,29 @@ PYBIND11_MODULE(coincfinder, m) {
       py::arg("offsets_ps") = std::vector<long long>{},
       "Count N-fold coincidences across any number of channel traces "
       "(picoseconds)");
+
+  m.def(
+      "count_nfold_coincidences_np",
+      [](py::list channels,
+         double coinc_window_ps,
+         py::array_t<long long, py::array::c_style | py::array::forcecast> offsets) {
+        std::vector<std::span<const long long>> spans;
+        spans.reserve(py::len(channels));
+        for (auto item : channels) {
+          py::array_t<long long, py::array::c_style | py::array::forcecast> arr =
+              py::cast<py::array>(item);
+          auto b = arr.unchecked<1>();
+          spans.emplace_back(b.data(0), b.size());
+        }
+        auto off = offsets.unchecked<1>();
+        std::span<const long long> offsets_span(off.data(0), off.size());
+        return countNFoldCoincidences(
+            spans, static_cast<long long>(std::llround(coinc_window_ps)),
+            offsets_span);
+      },
+      py::arg("channels"), py::arg("coinc_window_ps"),
+      py::arg("offsets") = py::array_t<long long>(),
+      "N-fold coincidences with channels/offsets as NumPy arrays.");
 
   m.def(
       "find_best_delay_ps",
@@ -204,6 +294,28 @@ PYBIND11_MODULE(coincfinder, m) {
       py::arg("delay_step_ps"),
       "Return the delay (picoseconds) that maximizes coincidences between two "
       "channels.");
+
+  m.def(
+      "find_best_delay_np",
+      [](py::array_t<long long, py::array::c_style | py::array::forcecast> reference,
+         py::array_t<long long, py::array::c_style | py::array::forcecast> target,
+         double coinc_window_ps, double delay_start_ps, double delay_end_ps,
+         double delay_step_ps) {
+        auto r = reference.unchecked<1>();
+        auto t = target.unchecked<1>();
+        std::span<const long long> sref(r.data(0), r.size());
+        std::span<const long long> stgt(t.data(0), t.size());
+        return findBestDelayPicoseconds(
+            sref, stgt,
+            static_cast<long long>(std::llround(coinc_window_ps)),
+            static_cast<long long>(std::llround(delay_start_ps)),
+            static_cast<long long>(std::llround(delay_end_ps)),
+            static_cast<long long>(std::llround(delay_step_ps)));
+      },
+      py::arg("reference"), py::arg("target"), py::arg("coinc_window_ps"),
+      py::arg("delay_start_ps"), py::arg("delay_end_ps"),
+      py::arg("delay_step_ps"),
+      "Return best delay (ps); NumPy input accepted without copying when contiguous.");
 
   py::class_<RollingSingles>(m, "RollingSingles")
       .def(py::init<long long>(), py::arg("window_seconds") = 200)

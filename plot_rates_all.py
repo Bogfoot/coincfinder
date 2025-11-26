@@ -69,9 +69,9 @@ def main():
         idx2 = calib_sec - s2.base_second
         if not (0 <= idx1 < len(s1.events_per_second) and 0 <= idx2 < len(s2.events_per_second)):
             continue
-        ch1 = s1.events_per_second[idx1]
-        ch2 = s2.events_per_second[idx2]
-        best = cf.find_best_delay_ps(ch1, ch2, args.coinc_window_ps,
+        ch1 = np.array(s1.events_per_second[idx1], dtype=np.int64)
+        ch2 = np.array(s2.events_per_second[idx2], dtype=np.int64)
+        best = cf.find_best_delay_np(ch1, ch2, args.coinc_window_ps,
                                      delay_start_ps, delay_end_ps, delay_step_ps)
         delays_ns[lbl] = best / 1000.0
         print(f"{lbl} best delay: {delays_ns[lbl]:.3f} ns (calib sec {calib_sec})")
@@ -116,12 +116,14 @@ def main():
                 row[f"{lbl}_coinc"] = np.nan
                 continue
             delay_ps = int(delays_ns[base] * 1000)
-            ch1 = buckets[c1]
-            ch2 = buckets[c2]
-            if len(ch1) == 0 or len(ch2) == 0:
+            ch1_list = buckets[c1]
+            ch2_list = buckets[c2]
+            if len(ch1_list) == 0 or len(ch2_list) == 0:
                 row[f"{lbl}_coinc"] = np.nan
                 continue
-            row[f"{lbl}_coinc"] = cf.count_coincidences_with_delay_ps(
+            ch1 = np.array(ch1_list, dtype=np.int64)
+            ch2 = np.array(ch2_list, dtype=np.int64)
+            row[f"{lbl}_coinc"] = cf.count_coincidences_with_delay_np(
                 ch1, ch2, args.coinc_window_ps, delay_ps)
 
         hh = row.get("HH_coinc") or 0
