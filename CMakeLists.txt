@@ -38,16 +38,24 @@ add_library(coincfinder_lib STATIC ${COINCFINDER_SOURCES})
 set_target_properties(coincfinder_lib PROPERTIES OUTPUT_NAME coincfinder)
 target_include_directories(coincfinder_lib PUBLIC ${PROJECT_SOURCE_DIR}/include)
 
-# Optional pybind11 module
+# Optional pybind11 module (auto-enabled if pybind11 is present)
 option(BUILD_PYTHON_BINDINGS "Build coincfinder Python module" ON)
 if(BUILD_PYTHON_BINDINGS)
     find_package(pybind11 CONFIG QUIET)
-    if(pybind11_FOUND)
+    if(NOT pybind11_FOUND)
+        message(STATUS "pybind11 not found; fetching with FetchContent")
+        include(FetchContent)
+        FetchContent_Declare(
+            pybind11
+            GIT_REPOSITORY https://github.com/pybind/pybind11.git
+            GIT_TAG        v2.12.0
+        )
+        FetchContent_MakeAvailable(pybind11)
+    endif()
+    if(pybind11_FOUND OR pybind11_POPULATED)
         pybind11_add_module(coincfinder MODULE src/bindings.cpp)
         target_link_libraries(coincfinder PRIVATE coincfinder_lib)
         set_target_properties(coincfinder PROPERTIES OUTPUT_NAME "coincfinder")
-    else()
-        message(STATUS "pybind11 not found; skipping Python bindings")
     endif()
 endif()
 
