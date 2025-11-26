@@ -51,21 +51,20 @@ if(BUILD_PYTHON_BINDINGS)
             GIT_TAG        v2.12.0
         )
         FetchContent_MakeAvailable(pybind11)
-        FetchContent_MakeAvailable(pybind11)
+        find_package(pybind11 CONFIG REQUIRED)
     endif()
 
     pybind11_add_module(coincfinder MODULE src/bindings.cpp)
     target_link_libraries(coincfinder PRIVATE coincfinder_lib)
-    set_target_properties(coincfinder PROPERTIES OUTPUT_NAME "coincfinder")
-    get_target_property(_outdir coincfinder RUNTIME_OUTPUT_DIRECTORY)
-    if(NOT _outdir)
-        set(_outdir ${CMAKE_CURRENT_BINARY_DIR})
-    endif()
-    add_custom_command(TARGET coincfinder POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:coincfinder>
-            ${_outdir}/$<TARGET_FILE_NAME:coincfinder>
-        COMMENT "Copying Python module to runtime output directory")
+    set_target_properties(coincfinder PROPERTIES
+        OUTPUT_NAME "coincfinder"
+        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+        ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+        LIBRARY_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/Release
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/Release
+        ARCHIVE_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/Release
+    )
 endif()
 
 # Optional OpenMP acceleration; works on both MSVC and GCC/Clang.
