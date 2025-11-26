@@ -35,7 +35,7 @@ def main():
     ap.add_argument("--delay-end-ns", type=float, default=12)
     ap.add_argument("--delay-step-ns", type=float, default=0.01)
     ap.add_argument("--seconds", type=int, default=None, help="Optional cap on number of seconds")
-    ap.add_argument("--calib-second", type=int, default=None,
+    ap.add_argument("--calib-second", type=int, default=0,
                     help="Absolute second used to calibrate delays (default: earliest available)")
     args = ap.parse_args()
 
