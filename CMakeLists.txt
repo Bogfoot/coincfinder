@@ -56,6 +56,17 @@ if(BUILD_PYTHON_BINDINGS)
         pybind11_add_module(coincfinder MODULE src/bindings.cpp)
         target_link_libraries(coincfinder PRIVATE coincfinder_lib)
         set_target_properties(coincfinder PROPERTIES OUTPUT_NAME "coincfinder")
+        # Copy the module next to built executables for convenience
+        # Copy module next to binaries (handles single- and multi-config)
+        get_target_property(_outdir coincfinder RUNTIME_OUTPUT_DIRECTORY)
+        if(NOT _outdir)
+            set(_outdir ${CMAKE_CURRENT_BINARY_DIR})
+        endif()
+        add_custom_command(TARGET coincfinder POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:coincfinder>
+                ${_outdir}/$<TARGET_FILE_NAME:coincfinder>
+            COMMENT "Copying Python module to runtime output directory")
     endif()
 endif()
 
