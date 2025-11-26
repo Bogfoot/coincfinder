@@ -62,6 +62,8 @@ if(BUILD_PYTHON_BINDINGS)
     set_target_properties(coincfinder_py PROPERTIES
         OUTPUT_NAME "coincfinder"
         SUFFIX ".pyd"
+        ARCHIVE_OUTPUT_NAME "coincfinder_py"
+        ARCHIVE_OUTPUT_NAME_RELEASE "coincfinder_py"
     )
 endif()
 
