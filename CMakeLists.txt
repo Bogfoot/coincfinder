@@ -65,6 +65,11 @@ if(BUILD_PYTHON_BINDINGS)
         ARCHIVE_OUTPUT_NAME "coincfinder_py"
         ARCHIVE_OUTPUT_NAME_RELEASE "coincfinder_py"
     )
+    add_custom_command(TARGET coincfinder_py POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:coincfinder_py>
+            ${CMAKE_BINARY_DIR}/$<TARGET_FILE_NAME:coincfinder_py>
+        COMMENT "Copying coincfinder.pyd to build/ for easy import")
 endif()
 
 # Copy helper Python scripts next to build dir
