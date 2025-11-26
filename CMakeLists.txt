@@ -54,9 +54,10 @@ if(BUILD_PYTHON_BINDINGS)
         set(pybind11_FOUND TRUE)
     endif()
 
-    pybind11_add_module(coincfinder MODULE src/bindings.cpp)
-    target_link_libraries(coincfinder PRIVATE coincfinder_lib)
-    set_target_properties(coincfinder PROPERTIES
+    # Use a unique target name to avoid case-insensitive collisions on Windows
+    pybind11_add_module(coincfinder_py MODULE src/bindings.cpp)
+    target_link_libraries(coincfinder_py PRIVATE coincfinder_lib)
+    set_target_properties(coincfinder_py PROPERTIES
         OUTPUT_NAME "coincfinder"
         LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
