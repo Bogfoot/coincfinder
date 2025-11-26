@@ -16,6 +16,14 @@ int countCoincidencesWithDelay(std::span<const long long> ch1,
                                long long coincWindowPs,
                                long long delayPs);
 
+/// Collects timestamp pairs that fall within the coincidence window for a
+/// given delay. Returns pairs of (t1_ps, t2_ps) in the original clock domain.
+std::vector<std::pair<long long, long long>>
+collectCoincidencesWithDelay(std::span<const long long> ch1,
+                             std::span<const long long> ch2,
+                             long long coincWindowPs,
+                             long long delayPs);
+
 /// Scans a delay range and fills `results` with (delay_ns, coincidence_count)
 /// using a histogram/difference-array approach (single pass over the data).
 void computeCoincidencesForRange(std::span<const long long> channel1,

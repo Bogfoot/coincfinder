@@ -56,11 +56,12 @@ appendNextFirstEvent(const std::vector<long long> &currentSecond,
     return std::span<const long long>(scratch.data(), scratch.size());
 }
 
+namespace {
+template <bool Collect>
 int countCoincidencesWithDelay(std::span<const long long> ch1,
                                std::span<const long long> ch2,
-                               long long coincWindowPs, long long delayPs) {
-    // The window is symmetric around zero and expressed as a half-width to keep
-    // the math tight.
+                               long long coincWindowPs, long long delayPs,
+                               std::vector<std::pair<long long, long long>> *outHits) {
     const long long lowerBound = -coincWindowPs;
     const long long upperBound = coincWindowPs;
 
@@ -74,18 +75,37 @@ int countCoincidencesWithDelay(std::span<const long long> ch1,
         const long long shifted = ch1[i] - delayPs;
         const long long diff = shifted - ch2[j];
 
-        // Classic two-pointer sweep over sorted timestamps.
         if (diff < lowerBound) {
             ++i;
         } else if (diff > upperBound) {
             ++j;
         } else {
             ++count;
+            if constexpr (Collect) {
+                outHits->emplace_back(ch1[i], ch2[j]);
+            }
             ++i;
             ++j;
         }
     }
     return count;
+}
+} // namespace
+
+std::vector<std::pair<long long, long long>>
+collectCoincidencesWithDelay(std::span<const long long> ch1,
+                             std::span<const long long> ch2,
+                             long long coincWindowPs, long long delayPs) {
+    std::vector<std::pair<long long, long long>> hits;
+    countCoincidencesWithDelay<true>(ch1, ch2, coincWindowPs, delayPs, &hits);
+    return hits;
+}
+
+int countCoincidencesWithDelay(std::span<const long long> ch1,
+                               std::span<const long long> ch2,
+                               long long coincWindowPs, long long delayPs) {
+    return countCoincidencesWithDelay<false>(ch1, ch2, coincWindowPs, delayPs,
+                                             nullptr);
 }
 
 int countNFoldCoincidences(const std::vector<std::span<const long long>> &channels,

@@ -12,12 +12,52 @@
 #include "ReadCSV.h"
 #include "Singles.h"
 
+namespace {
+
+long long nsToPs(float ns) {
+    return static_cast<long long>(
+        std::llround(static_cast<double>(ns) * 1000.0));
+}
+
+bool clampRange(const std::map<int, Singles> &singlesMap, int &startSec,
+                int &stopSec) {
+    long long earliestSec = std::numeric_limits<long long>::max();
+    long long latestSec = std::numeric_limits<long long>::min();
+    for (auto &[ch, singles] : singlesMap) {
+        if (singles.eventsPerSecond.empty())
+            continue;
+        earliestSec = std::min(earliestSec, singles.baseSecond);
+        long long last =
+            singles.baseSecond +
+            static_cast<long long>(singles.eventsPerSecond.size()) - 1;
+        latestSec = std::max(latestSec, last);
+    }
+    if (earliestSec == std::numeric_limits<long long>::max())
+        return false;
+
+    startSec = static_cast<int>(std::max<long long>(startSec, earliestSec));
+    stopSec = static_cast<int>(std::min<long long>(stopSec, latestSec));
+    return startSec <= stopSec;
+}
+
+} // namespace
+
+void print_help(const char *exe) {
+    std::cout
+        << "CoincFinder - delay scan and histogram exporter\n"
+        << "Usage: " << exe
+        << " <csv|bin> <coinc_window_ps> <delay_start_ns> <delay_end_ns> <delay_step_ns> <startSec> <stopSec>\n"
+        << "Example: " << exe << " data.bin 250 8 12 0.01 0 600\n\n"
+        << "Outputs:\n"
+        << "  Delay_Scan_Data/delay_scan_<ch1>_vs_<ch2>_second_<sec>.csv\n"
+        << "Notes:\n"
+        << "  - <startSec>/<stopSec> are clamped to available data seconds.\n"
+        << "  - delay_* in nanoseconds; window in picoseconds.\n";
+}
+
 int main(int argc, char *argv[]) {
   if (argc < 8) {
-    std::cerr
-        << "Usage: " << argv[0]
-        << " <csv_file> <coinc_window(ps)> <delay_start(ns)> <delay_end(ns)> "
-           "<delay_step(ns)> <startSec> <stopSec>\n";
+    print_help(argv[0]);
     return 1;
   }
 
@@ -50,12 +90,6 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  // Convert once up front so the rest of the pipeline stays in integers.
-  const auto nsToPs = [](float ns) -> long long {
-    return static_cast<long long>(
-        std::llround(static_cast<double>(ns) * 1000.0));
-  };
-
   const long long delayStartPs = nsToPs(delayStart);
   const long long delayEndPs = nsToPs(delayEnd);
   const long long delayStepPs = nsToPs(delayStep);
@@ -69,26 +103,8 @@ int main(int argc, char *argv[]) {
   auto singlesMap = readFileAuto(csvFilename, duration_sec);
   std::cout << "Measurement duration: " << duration_sec << " seconds\n";
 
-  long long earliestSec = std::numeric_limits<long long>::max();
-  long long latestSec = std::numeric_limits<long long>::min();
-  for (auto &[ch, singles] : singlesMap) {
-    if (singles.eventsPerSecond.empty())
-      continue;
-    earliestSec = std::min(earliestSec, singles.baseSecond);
-    long long last = singles.baseSecond +
-                     static_cast<long long>(singles.eventsPerSecond.size()) - 1;
-    latestSec = std::max(latestSec, last);
-  }
-  if (earliestSec == std::numeric_limits<long long>::max()) {
-    std::cerr << "No singles data found.\n";
-    return 1;
-  }
-
-  startSec = static_cast<int>(std::max<long long>(startSec, earliestSec));
-  stopSec = static_cast<int>(std::min<long long>(stopSec, latestSec));
-  if (startSec > stopSec) {
-    std::cerr << "Requested second range has no overlap with data (available: "
-              << earliestSec << "-" << latestSec << ").\n";
+  if (!clampRange(singlesMap, startSec, stopSec)) {
+    std::cerr << "No singles data found or requested range empty.\n";
     return 1;
   }
 

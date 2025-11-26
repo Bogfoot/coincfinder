@@ -90,6 +90,46 @@ PYBIND11_MODULE(coincfinder, m) {
       py::arg("ch1"), py::arg("ch2"), py::arg("coinc_window_ps"),
       py::arg("delay_ps"), "Count coincidences (all arguments in picoseconds)");
 
+  m.def(
+      "collect_coincidences_with_delay_ps",
+      [](const std::vector<long long> &ch1, const std::vector<long long> &ch2,
+         double coinc_window_ps, double delay_ps) {
+        const auto coinc_window_ll =
+            static_cast<long long>(std::llround(coinc_window_ps));
+        const auto delay_ll = static_cast<long long>(std::llround(delay_ps));
+        return collectCoincidencesWithDelay(std::span<const long long>(ch1),
+                                            std::span<const long long>(ch2),
+                                            coinc_window_ll, delay_ll);
+      },
+      py::arg("ch1"), py::arg("ch2"), py::arg("coinc_window_ps"),
+      py::arg("delay_ps"),
+      "Collect coincidence timestamp pairs (picoseconds) at a given delay.");
+
+  m.def(
+      "coincidences_with_delay_ps",
+      [](const std::vector<long long> &ch1, const std::vector<long long> &ch2,
+         double coinc_window_ps, double delay_ps, bool collect) -> py::object {
+        const auto coinc_window_ll =
+            static_cast<long long>(std::llround(coinc_window_ps));
+        const auto delay_ll = static_cast<long long>(std::llround(delay_ps));
+        if (collect) {
+          auto hits = collectCoincidencesWithDelay(
+              std::span<const long long>(ch1),
+              std::span<const long long>(ch2),
+              coinc_window_ll, delay_ll);
+          return py::cast(hits);
+        }
+        int count = countCoincidencesWithDelay(
+            std::span<const long long>(ch1),
+            std::span<const long long>(ch2),
+            coinc_window_ll, delay_ll);
+        return py::cast(count);
+      },
+      py::arg("ch1"), py::arg("ch2"), py::arg("coinc_window_ps"),
+      py::arg("delay_ps"), py::arg("collect") = false,
+      "If collect=False (default), return coincidence count; if True, return "
+      "list of timestamp pairs (picoseconds) at the given delay/window.");
+
   // --- Compute coincidences for range (accept delays in ps)
   m.def(
       "compute_coincidences_for_range_ps",
