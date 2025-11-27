@@ -1,7 +1,6 @@
 // CoincFinder CLI driver. Reads singles from CSV/BIN, scans a delay range for
 // each detector pair, and writes per-second coincidence sweeps to disk.
 
-#include <atomic>
 #include <cmath>
 #include <filesystem>
 #include <iostream>
