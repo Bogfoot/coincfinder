@@ -30,11 +30,13 @@ add_library(coincfinder_lib STATIC ${COINCFINDER_SOURCES})
 set_target_properties(coincfinder_lib PROPERTIES OUTPUT_NAME "coincfinder_core")
 target_include_directories(coincfinder_lib PUBLIC ${PROJECT_SOURCE_DIR}/include)
 
-# Optional OpenMP
-find_package(OpenMP)
-if(OpenMP_CXX_FOUND)
-    target_link_libraries(coincfinder_lib PUBLIC OpenMP::OpenMP_CXX)
-    target_compile_definitions(coincfinder_lib PUBLIC COINCFINDER_WITH_OPENMP=1)
+# Optional OpenMP (skip on Windows to avoid extra DLL deps)
+if(NOT WIN32)
+    find_package(OpenMP)
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(coincfinder_lib PUBLIC OpenMP::OpenMP_CXX)
+        target_compile_definitions(coincfinder_lib PUBLIC COINCFINDER_WITH_OPENMP=1)
+    endif()
 endif()
 
 add_executable(CoincFinder src/CoincFinder.cpp)
