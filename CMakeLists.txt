@@ -11,7 +11,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# Output directories (flattened)
+# Flattened output directories
 foreach(TYPE RUNTIME LIBRARY ARCHIVE)
     set(CMAKE_${TYPE}_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
     foreach(CONFIG Release RelWithDebInfo MinSizeRel Debug)
@@ -29,11 +29,14 @@ add_library(coincfinder_lib STATIC ${COINCFINDER_SOURCES})
 set_target_properties(coincfinder_lib PROPERTIES OUTPUT_NAME coincfinder)
 target_include_directories(coincfinder_lib PUBLIC ${PROJECT_SOURCE_DIR}/include)
 
-# Optional OpenMP
+# Optional OpenMP (static on MSVC to avoid missing DLLs)
 find_package(OpenMP)
 if(OpenMP_CXX_FOUND)
     target_link_libraries(coincfinder_lib PUBLIC OpenMP::OpenMP_CXX)
     target_compile_definitions(coincfinder_lib PUBLIC COINCFINDER_WITH_OPENMP=1)
+    if(MSVC)
+        target_link_options(coincfinder_lib PUBLIC "/openmp:experimental" "/MT")
+    endif()
 endif()
 
 add_executable(CoincFinder src/CoincFinder.cpp)
@@ -61,15 +64,14 @@ if(BUILD_PYTHON_BINDINGS)
     target_link_libraries(coincfinder_py PRIVATE coincfinder_lib)
     set_target_properties(coincfinder_py PROPERTIES
         OUTPUT_NAME "coincfinder"
-        SUFFIX ".pyd"
-        ARCHIVE_OUTPUT_NAME "coincfinder_py"
-        ARCHIVE_OUTPUT_NAME_RELEASE "coincfinder_py"
+        SUFFIX $<$<BOOL:WIN32>:.pyd>
     )
+    # Copy module to build/ for easy import
     add_custom_command(TARGET coincfinder_py POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:coincfinder_py>
             ${CMAKE_BINARY_DIR}/$<TARGET_FILE_NAME:coincfinder_py>
-        COMMENT "Copying coincfinder.pyd to build/ for easy import")
+        COMMENT "Copying Python module to build/ for import")
 endif()
 
 # Copy helper Python scripts next to build dir
