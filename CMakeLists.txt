@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(CoincFinder LANGUAGES CXX)
 
-# Default to Release for single-config generators
+# Default Release for single-config
 if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
@@ -11,7 +11,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# Flattened output directories
+# Output dirs
 foreach(TYPE RUNTIME LIBRARY ARCHIVE)
     set(CMAKE_${TYPE}_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
     foreach(CONFIG Release RelWithDebInfo MinSizeRel Debug)
@@ -29,7 +29,7 @@ add_library(coincfinder_lib STATIC ${COINCFINDER_SOURCES})
 set_target_properties(coincfinder_lib PROPERTIES OUTPUT_NAME coincfinder)
 target_include_directories(coincfinder_lib PUBLIC ${PROJECT_SOURCE_DIR}/include)
 
-# Optional OpenMP (static on MSVC to avoid missing DLLs)
+# OpenMP optional
 find_package(OpenMP)
 if(OpenMP_CXX_FOUND)
     target_link_libraries(coincfinder_lib PUBLIC OpenMP::OpenMP_CXX)
@@ -42,7 +42,7 @@ target_link_libraries(CoincFinder PRIVATE coincfinder_lib)
 add_executable(CoincPairs src/CoincPairs.cpp)
 target_link_libraries(CoincPairs PRIVATE coincfinder_lib)
 
-# Pybind11 module (auto-fetch if missing)
+# Pybind11 module
 option(BUILD_PYTHON_BINDINGS "Build coincfinder Python module" ON)
 if(BUILD_PYTHON_BINDINGS)
     find_package(pybind11 CONFIG QUIET)
@@ -59,11 +59,11 @@ if(BUILD_PYTHON_BINDINGS)
 
     pybind11_add_module(coincfinder_py MODULE src/bindings.cpp)
     target_link_libraries(coincfinder_py PRIVATE coincfinder_lib)
-    set_target_properties(coincfinder_py PROPERTIES
-        OUTPUT_NAME "coincfinder"
-        SUFFIX $<$<BOOL:WIN32>:.pyd>
-    )
-    # Copy module to build/ for easy import
+    if(WIN32)
+        set_target_properties(coincfinder_py PROPERTIES OUTPUT_NAME "coincfinder" SUFFIX ".pyd")
+    else()
+        set_target_properties(coincfinder_py PROPERTIES OUTPUT_NAME "coincfinder")
+    endif()
     add_custom_command(TARGET coincfinder_py POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:coincfinder_py>
