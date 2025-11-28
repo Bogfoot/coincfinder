@@ -50,3 +50,17 @@ if(COINCFINDER_BUILD_PYTHON)
   pybind11_add_module(coincfinder_py src/bindings.cpp)
   target_link_libraries(coincfinder_py PRIVATE coincfinder_core)
 endif()
+
+# Copy helper Python scripts to the build output for quick use with the .pyd/.so
+file(GLOB COINCFINDER_PY_SCRIPTS "${CMAKE_SOURCE_DIR}/*.py")
+if(COINCFINDER_PY_SCRIPTS)
+  if(WIN32)
+    set(COINCFINDER_PY_DEST "${CMAKE_BINARY_DIR}/Release")
+  else()
+    set(COINCFINDER_PY_DEST "${CMAKE_BINARY_DIR}")
+  endif()
+  add_custom_target(copy_python_helpers ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${COINCFINDER_PY_DEST}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${COINCFINDER_PY_SCRIPTS} "${COINCFINDER_PY_DEST}"
+    COMMENT "Copying Python helper scripts to ${COINCFINDER_PY_DEST}")
+endif()
