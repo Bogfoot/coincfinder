@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(coincfinder LANGUAGES CXX)
 
-option(COINCFINDER_BUILD_TESTS "Build unit/integration tests" ON)
+option(COINCFINDER_BUILD_TESTS "Build unit/integration tests" OFF)
 option(COINCFINDER_BUILD_PYTHON "Build pybind11 Python module" ON)
 
 set(CMAKE_CXX_STANDARD 20)
