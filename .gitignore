@@ -31,6 +31,7 @@ coincfinder/build/
 /2025-11-19_13_05_03_MDP_UVTP_exp_time_s_5.bin
 
 # Repo-local files
+8hMeasurement/
 qber_live_log.csv
 pyproject.toml
 plotter_settings.json

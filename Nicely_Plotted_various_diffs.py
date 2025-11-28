@@ -102,31 +102,53 @@ def plot_rates(ax, seconds, counts, title):
     ax.grid(alpha=0.2)
 
 
-def process_pair(pair: str):
-    path = EVENT_DIR / f"{pair}.csv"
-    df = load_events(path)
-    if df is None:
-        print(f"{pair}: no events")
-        return
+def phase_retrieve_from_hist(values, bins, iters, seeds, support_frac=0.4, nonneg=False):
+    """
+    values: array of t2-t1 samples (ps)
+    bins: integer number of bins for histogram (regular grid for FFT)
+    Returns time grid (bin centers) and reconstructed waveform samples.
+    """
+    if len(values) < 4:
+        return None, None
+    # Build symmetric-ish histogram around the data
+    lo, hi = np.percentile(values, [1, 99])
+    width = hi - lo
+    lo -= 0.25 * width
+    hi += 0.25 * width
+    hist, edges = np.histogram(values, bins=bins, range=(lo, hi))
+    centers = 0.5 * (edges[:-1] + edges[1:])
 
-    diffs = compute_diffs(df)
-    print(
-        f"{pair}: mean(t2-t1)={np.nanmean(diffs['coinc_times']):.2f} ps, "
-        f"median gap={np.nanmedian(diffs['distances']):.2f} ps"
-    )
+    g = hist.astype(float)
+    n = len(g)
+    G = np.fft.rfft(g)
+    mag = np.sqrt(np.maximum(G.real, 0.0))
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
-    fig.suptitle(f"{pair} coincidence timing distributions", fontsize=13, weight="bold")
-    plot_hist(axes[0], diffs["distances"], f"{pair}: gap (next t1 - prev t2)", "gray")
-    plot_hist(axes[1], diffs["coinc_times"], f"{pair}: t2 - t1", "steelblue")
-    plot_hist(axes[2], diffs["consecutive_delta"], f"{pair}: Δ(t2-t1) between events", "crimson")
-    plt.tight_layout()
-    out_png = EVENT_DIR / f"{pair}_hist.png"
-    plt.savefig(out_png, dpi=150)
-    print(f"  wrote {out_png}")
-    # Show interactively for quick inspection; close after display so the next pair can render.
-    plt.show()
-    plt.close(fig)
+    support_len = max(8, int(n * support_frac))
+    start = (n - support_len) // 2
+    mask = np.zeros(n, dtype=bool)
+    mask[start : start + support_len] = True
+
+    rng = np.random.default_rng()
+    best_err = np.inf
+    best_f = None
+
+    for _ in range(seeds):
+        phase = np.exp(1j * rng.uniform(0, 2 * np.pi, mag.shape))
+        F = mag * phase
+        for _ in range(iters):
+            f = np.fft.irfft(F, n)
+            if nonneg:
+                f = np.maximum(f, 0)
+            f = f * mask
+            F_est = np.fft.rfft(f)
+            phase = np.exp(1j * np.angle(F_est))
+            F = mag * phase
+        f_final = np.fft.irfft(F, n).real
+        residual = np.linalg.norm(np.abs(np.fft.rfft(f_final)) - mag)
+        if residual < best_err:
+            best_err = residual
+            best_f = f_final
+    return centers, best_f
 
 
 
@@ -149,7 +171,8 @@ def summarize_pair(pair, df, window_ps):
         "fwhm_like_ps": float(fwhm_like),
     }
     if window_ps is not None:
-        half = window_ps / 2.0
+        # CoincPairs uses ±coinc_window_ps internally; treat window_ps as that half-width
+        half = window_ps
         frac_in_window = np.mean((t2t1 >= median - half) & (t2t1 <= median + half))
         summary["frac_in_window"] = float(frac_in_window)
     return summary
@@ -204,7 +227,7 @@ def process_pair(pair: str, window_ps: float | None, max_lag: int, channel_width
     plt.show()
     plt.close(fig2)
 
-    return summary
+    return summary, diffs
 
 
 def summarize_channels(channel_widths):
@@ -217,30 +240,57 @@ def summarize_channels(channel_widths):
 
 
 def main():
+    global EVENT_DIR
     parser = argparse.ArgumentParser(description="Plot CoincPairs event timing histograms.")
     parser.add_argument("--event-dir", type=Path, default=EVENT_DIR, help="Path to CoincEvents directory")
-    parser.add_argument("--window-ps", type=float, default=None, help="Coincidence window used in CoincPairs (ps) for adequacy check")
+    parser.add_argument("--window-ps", type=float, default=None,
+                        help="Coincidence half-window used in CoincPairs (ps); CoincPairs argument coinc_window_ps")
     parser.add_argument("--max-lag", type=int, default=200, help="Max lag (events) for gap autocorrelation")
+    parser.add_argument("--reconstruct", action="store_true", help="Attempt phase-retrieval of waveform from t2-t1 histogram")
+    parser.add_argument("--recon-bins", type=int, default=1024, help="Number of bins for t2-t1 histogram used in reconstruction")
+    parser.add_argument("--recon-iters", type=int, default=600, help="Iterations per phase retrieval run")
+    parser.add_argument("--recon-seeds", type=int, default=5, help="Number of random phase seeds; best residual is kept")
+    parser.add_argument("--recon-support-frac", type=float, default=0.4, help="Support width as fraction of histogram length (centered)")
     args = parser.parse_args()
 
-    event_dir = args.event_dir
-    if not event_dir.exists():
-        print(f"No CoincEvents directory found at {event_dir}")
+    EVENT_DIR = args.event_dir
+
+    if not EVENT_DIR.exists():
+        print(f"No CoincEvents directory found at {EVENT_DIR}")
         return
-    available = [p for p in PAIRS if (event_dir / f"{p}.csv").exists()]
+    available = [p for p in PAIRS if (EVENT_DIR / f"{p}.csv").exists()]
     if not available:
         print("No CoincEvents/<pair>.csv files found. Run CoincPairs with --dump-events first.")
         return
 
-    global EVENT_DIR
-    EVENT_DIR = event_dir  # so helper functions use the chosen dir
-
     summaries = []
     channel_widths = {}
     for pair in available:
-        summary = process_pair(pair, args.window_ps, args.max_lag, channel_widths)
+        summary, diffs = process_pair(pair, args.window_ps, args.max_lag, channel_widths)
         if summary:
             summaries.append(summary)
+        if args.reconstruct and diffs and len(diffs["coinc_times"]) > 4:
+            centers, f_rec = phase_retrieve_from_hist(
+                diffs["coinc_times"],
+                bins=args.recon_bins,
+                iters=args.recon_iters,
+                seeds=args.recon_seeds,
+                support_frac=args.recon_support_frac,
+                nonneg=False,
+            )
+            if centers is not None and f_rec is not None:
+                fig, ax = plt.subplots(figsize=(10, 4))
+                ax.plot(centers, f_rec, color="purple")
+                ax.set_title(f"{pair}: reconstructed waveform (arb. units)")
+                ax.set_xlabel("Time (ps)")
+                ax.set_ylabel("Amplitude (arb.)")
+                ax.grid(alpha=0.25)
+                out_png = EVENT_DIR / f"{pair}_waveform.png"
+                plt.tight_layout()
+                plt.savefig(out_png, dpi=150)
+                print(f"  wrote {out_png} (phase-retrieved waveform)")
+                plt.show()
+                plt.close(fig)
 
     summarize_channels(channel_widths)
 
