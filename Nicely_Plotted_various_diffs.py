@@ -90,18 +90,6 @@ def plot_autocorr(ax, data, title, max_lag):
     ax.grid(alpha=0.25)
 
 
-def plot_rates(ax, seconds, counts, title):
-    if len(seconds) == 0:
-        ax.set_title(f"{title}\n(no data)")
-        ax.axis("off")
-        return
-    ax.bar(seconds, counts, width=0.8, color="slategray")
-    ax.set_title(title)
-    ax.set_xlabel("Second")
-    ax.set_ylabel("Coincidences")
-    ax.grid(alpha=0.2)
-
-
 def phase_retrieve_from_hist(values, bins, iters, seeds, support_frac=0.4, nonneg=False):
     """
     values: array of t2-t1 samples (ps)
@@ -214,14 +202,11 @@ def process_pair(pair: str, window_ps: float | None, max_lag: int, channel_width
     plt.show()
     plt.close(fig)
 
-    # Autocorr + rate panel
-    fig2, axes2 = plt.subplots(1, 2, figsize=(13, 4))
-    plot_autocorr(axes2[0], diffs["distances"], f"{pair}: gap autocorr", max_lag)
-    # Rates per second
-    counts = df.groupby("second").size()
-    plot_rates(axes2[1], counts.index.to_numpy(), counts.to_numpy(), f"{pair}: coincidences per second")
+    # Autocorr panel (gap structure)
+    fig2, ax2 = plt.subplots(1, 1, figsize=(6, 4))
+    plot_autocorr(ax2, diffs["distances"], f"{pair}: gap autocorr", max_lag)
     plt.tight_layout()
-    out_png2 = EVENT_DIR / f"{pair}_autocorr_rates.png"
+    out_png2 = EVENT_DIR / f"{pair}_autocorr.png"
     plt.savefig(out_png2, dpi=150)
     print(f"  wrote {out_png2}")
     plt.show()
@@ -246,7 +231,8 @@ def main():
     parser.add_argument("--window-ps", type=float, default=None,
                         help="Coincidence half-window used in CoincPairs (ps); CoincPairs argument coinc_window_ps")
     parser.add_argument("--max-lag", type=int, default=200, help="Max lag (events) for gap autocorrelation")
-    parser.add_argument("--reconstruct", action="store_true", help="Attempt phase-retrieval of waveform from t2-t1 histogram")
+    parser.add_argument("--reconstruct", action="store_true", default=True,
+                        help="Attempt phase-retrieval of waveform from t2-t1 histogram (default: on)")
     parser.add_argument("--recon-bins", type=int, default=1024, help="Number of bins for t2-t1 histogram used in reconstruction")
     parser.add_argument("--recon-iters", type=int, default=600, help="Iterations per phase retrieval run")
     parser.add_argument("--recon-seeds", type=int, default=5, help="Number of random phase seeds; best residual is kept")
