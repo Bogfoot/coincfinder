@@ -166,12 +166,13 @@ def summarize_pair(pair, df, window_ps):
     return summary
 
 
-def process_pair(pair: str, window_ps: float | None, max_lag: int, channel_widths):
-    path = EVENT_DIR / f"{pair}.csv"
+def process_pair(pair: str, window_ps: float | None, max_lag: int,
+                 channel_widths, base_dir: Path):
+    path = base_dir / f"{pair}.csv"
     df = load_events(path)
     if df is None:
         print(f"{pair}: no events")
-        return None
+        return None, None
 
     diffs = compute_diffs(df)
     summary = summarize_pair(pair, df, window_ps)
@@ -196,7 +197,7 @@ def process_pair(pair: str, window_ps: float | None, max_lag: int, channel_width
     plot_hist(axes[1], diffs["coinc_times"], f"{pair}: t2 - t1", "steelblue")
     plot_hist(axes[2], diffs["consecutive_delta"], f"{pair}: Δ(t2-t1) between events", "crimson")
     plt.tight_layout()
-    out_png = EVENT_DIR / f"{pair}_hist.png"
+    out_png = base_dir / f"{pair}_hist.png"
     plt.savefig(out_png, dpi=150)
     print(f"  wrote {out_png}")
     plt.show()
@@ -206,7 +207,7 @@ def process_pair(pair: str, window_ps: float | None, max_lag: int, channel_width
     fig2, ax2 = plt.subplots(1, 1, figsize=(6, 4))
     plot_autocorr(ax2, diffs["distances"], f"{pair}: gap autocorr", max_lag)
     plt.tight_layout()
-    out_png2 = EVENT_DIR / f"{pair}_autocorr.png"
+    out_png2 = base_dir / f"{pair}_autocorr.png"
     plt.savefig(out_png2, dpi=150)
     print(f"  wrote {out_png2}")
     plt.show()
@@ -228,6 +229,8 @@ def main():
     global EVENT_DIR
     parser = argparse.ArgumentParser(description="Plot CoincPairs event timing histograms.")
     parser.add_argument("--event-dir", type=Path, default=EVENT_DIR, help="Path to CoincEvents directory")
+    parser.add_argument("--run", type=str, default=None,
+                        help="Subfolder inside event-dir to read (e.g., input file stem). If omitted and only one subfolder exists, it is chosen automatically.")
     parser.add_argument("--window-ps", type=float, default=None,
                         help="Coincidence half-window used in CoincPairs (ps); CoincPairs argument coinc_window_ps")
     parser.add_argument("--max-lag", type=int, default=200, help="Max lag (events) for gap autocorrelation")
@@ -244,15 +247,39 @@ def main():
     if not EVENT_DIR.exists():
         print(f"No CoincEvents directory found at {EVENT_DIR}")
         return
-    available = [p for p in PAIRS if (EVENT_DIR / f"{p}.csv").exists()]
+
+    run_dir = EVENT_DIR
+    if args.run:
+        candidate = Path(args.run)
+        if candidate.is_absolute() or candidate.exists():
+            run_dir = candidate
+        else:
+            run_dir = EVENT_DIR / candidate
+    else:
+        subdirs = [d for d in EVENT_DIR.iterdir() if d.is_dir()]
+        csv_in_root = list(EVENT_DIR.glob("*.csv"))
+        if csv_in_root and not subdirs:
+            run_dir = EVENT_DIR
+        elif len(subdirs) == 1:
+            run_dir = subdirs[0]
+        elif len(subdirs) > 1:
+            names = ", ".join(d.name for d in subdirs)
+            print(f"Multiple runs found in {EVENT_DIR}: {names}. Pick one with --run <name>.")
+            return
+
+    if not run_dir.exists():
+        print(f"Run directory not found: {run_dir}")
+        return
+
+    available = [p for p in PAIRS if (run_dir / f"{p}.csv").exists()]
     if not available:
-        print("No CoincEvents/<pair>.csv files found. Run CoincPairs with --dump-events first.")
+        print(f"No <pair>.csv files found in {run_dir}. Run CoincPairs with --dump-events first.")
         return
 
     summaries = []
     channel_widths = {}
     for pair in available:
-        summary, diffs = process_pair(pair, args.window_ps, args.max_lag, channel_widths)
+        summary, diffs = process_pair(pair, args.window_ps, args.max_lag, channel_widths, run_dir)
         if summary:
             summaries.append(summary)
         if args.reconstruct and diffs and len(diffs["coinc_times"]) > 4:
@@ -271,7 +298,7 @@ def main():
                 ax.set_xlabel("Time (ps)")
                 ax.set_ylabel("Amplitude (arb.)")
                 ax.grid(alpha=0.25)
-                out_png = EVENT_DIR / f"{pair}_waveform.png"
+                out_png = run_dir / f"{pair}_waveform.png"
                 plt.tight_layout()
                 plt.savefig(out_png, dpi=150)
                 print(f"  wrote {out_png} (phase-retrieved waveform)")

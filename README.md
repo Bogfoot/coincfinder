@@ -1,77 +1,82 @@
 # coincfinder
 
-A fast coincidence scanner for time‑tagged detector singles. The CLI ingests per‑channel timestamps (CSV or BIN), scans a user‑specified delay range, and writes per‑second coincidence sweeps to disk. A small static library (`coincfinder`) exposes the core logic for reuse in other applications.
+Fast coincidence scanning for time‑tagged detector singles and per‑pair timing analysis tools. The project ships:
+- `CoincFinder` / `CoincPairs` CLIs for scanning and per-pair event dumping.
+- `libcoincfinder` static library for reuse.
+- Lightweight plotting/analysis scripts for delay sweeps and event timing inspection.
 
 ## Layout
-- `src/` – CLI (`CoincFinder.cpp`) and core sources (`Coincidences.cpp`, `ReadCSV.cpp`)
-- `include/` – public headers (`Singles.h`, `Coincidences.h`, `ReadCSV.h`)
-- `build/` – default out-of-source build output (executables, libraries, generated scan files)
-- `plot_everything.py` – optional helper for visualizing results
+- `src/` – CLI and core sources (`CoincFinder.cpp`, `Coincidences.cpp`, `ReadCSV.cpp`).
+- `include/` – public headers mirroring the core sources.
+- `build/` – out-of-source build (binaries, libraries, generated outputs).
+- `Testing/` – quick sanity checks (`TestRolling.cpp`).
+- Top-level helper scripts:
+  - `plot_everything.py`, `plot_rates_all.py`, `plot_timeseries_all.py` – visualize scan outputs.
+  - `Nicely_Plotted_various_diffs.py` – histogram/autocorr/phase-retrieval plots for event dumps.
+  - `run_all_coincpairs.sh` – batch wrapper to run `CoincPairs` over a directory of `.bin` files.
 
 ## Prerequisites
 - CMake ≥ 3.16
-- C++20 compiler
-  - Linux: GCC ≥ 11 or Clang ≥ 13
-  - Windows: Visual Studio 2022 Build Tools (MSVC)
-- OpenMP (optional) – if found, used for multithreading
-- Python ≥ 3.8 (only for helper scripts; not required to build)
+- C++20 compiler  
+  - Linux: GCC ≥ 11 or Clang ≥ 13  
+  - Windows: Visual Studio 2022 (MSVC)
+- OpenMP (optional; auto-detected)
+- Python ≥ 3.8 for helper scripts (matplotlib, pandas, numpy)
 
-## Building
-
-### Linux
+## Build
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
-Artifacts land in `build/`:
-- `CoincFinder` (CLI)
-- `libcoincfinder.a` (static library; name may be `coincfinder.lib` on Windows)
+Artifacts (Release):
+- `build/CoincFinder`
+- `build/CoincPairs`
+- `build/libcoincfinder_core.a`
 
-### Windows (Visual Studio 2022 generator)
-Run from a “x64 Native Tools Command Prompt for VS 2022”:
-```cmd
-cmake -S . -B build -G "Visual Studio 17 2022"
-cmake --build build --config Release
+Clean rebuild if CMake cache tangles: `rm -rf build && cmake -S . -B build`.
+
+## CoincFinder CLI
 ```
-Outputs are placed in `build/Release/` for the configuration build.
-
-### Notes
-- If you ever see cache/path mix-ups, delete the build directory and re-configure: `rm -rf build` (PowerShell/Bash) or `rmdir /s /q build` (cmd).
-- On Windows the library target is named `coincfinder_lib` but its artifact is `coincfinder.lib`.
-
-## CLI Usage
+./CoincFinder <csv_or_bin> <coinc_window_ps> <delay_start_ns> <delay_end_ns> <delay_step_ns> <startSec> <stopSec>
 ```
-CoincFinder <csv_or_bin_file> <coinc_window_ps> <delay_start_ns> <delay_end_ns> <delay_step_ns> <startSec> <stopSec>
-```
-
 Example:
 ```
 ./CoincFinder data/data.bin 250 8 12 0.01 0 600
 ```
-or
+Outputs go to `Delay_Scan_Data/` (per-second delay sweeps named `delay_scan_<ch1>_vs_<ch2>_second_<sec>.csv`).
+
+## CoincPairs CLI (event dumps)
 ```
-CoincFinder.exe data/data.bin 250 8 12 0.01 0 600
+./CoincPairs <csv_or_bin> <coinc_window_ps> <delay_start_ns> <delay_end_ns> <delay_step_ns> <startSec> <stopSec> [rate_csv] --dump-events
 ```
+- Emits per-pair event CSVs under `CoincEvents/<input_stem>/` when `--dump-events` is given.
+- If `rate_csv` is provided, it is written inside that same per-run folder (see `run_all_coincpairs.sh`).
+- See `docs/coinpairs.md` for a compact reference.
 
-Parameters:
-- `coinc_window_ps`  – coincidence window in picoseconds
-- `delay_start_ns`   – starting delay (ns)
-- `delay_end_ns`     – ending delay (ns)
-- `delay_step_ns`    – step size (ns)
-- `startSec/stopSec` – restrict processing to this second range
+### Batch helper
+`run_all_coincpairs.sh` runs `CoincPairs` over `8hMeasurement/*.bin`:
+```bash
+cd build
+bash run_all_coincpairs.sh
+```
+Edit the variables at the top to change the coincidence window, delay range, or start/stop seconds. Each run writes its own `CoincEvents/<file_stem>/rate.csv` plus event dumps.
 
-### Input formats
-- `.bin` – binary time-tag format
-- `.csv` – CSV time-tag format
+## Tests
+- C++ asserts: `./build/CoincFinderTests`
+- Rolling buffer sanity: `./build/Testing/TestRolling <sample.csv>`
+- Python smoke test for FFT helper: `python3 test_sqrt_fft_ifft.py` (writes `sqrt_fft_ifft_diagnostics.png`).
 
-## Output
-- Results are written into `Delay_Scan_Data/` alongside the executable.
-- For each detector pair and second, a file named `delay_scan_<ch1>_vs_<ch2>_second_<sec>.csv` is produced.
+## Plotting event timing
+After running `CoincPairs --dump-events`, use:
+```bash
+python3 Nicely_Plotted_various_diffs.py --event-dir CoincEvents --run <input_stem>
+```
+This generates per-pair histograms, gap autocorr, and optional waveform reconstructions (phase retrieval and sqrt-FFT IFFT).
 
 ## Troubleshooting
-- **Circular dependency / ResolveProjectReferences (MSBuild):** ensure the build directory is clean and reconfigure; name collisions are already avoided in `CMakeLists.txt`.
-- **OpenMP not found:** build will fall back to single-threaded execution; install OpenMP-capable toolchain to enable.
-- **Mixing debug/release artifacts:** multi-config generators place outputs under `build/<Config>/`; use `--config Release` when building and running.
+- OpenMP missing: falls back to single-threaded; install an OpenMP-capable toolchain to speed up.
+- Mixed configs: multi-config generators place outputs under `build/<Config>/`; use `--config Release` when running MSVC builds.
+- Cache issues: delete `build/` and reconfigure.
 
 ## License
-MIT — see `LICENSE` for details. Copyright (c) 2025 Adrian Udovičić, PhD student in physics at University of Ljubljana, Faculty of Mathematics and Physics.
+MIT — see `LICENSE`.

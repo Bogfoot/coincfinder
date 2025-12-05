@@ -222,10 +222,18 @@ int main(int argc, char *argv[]) {
 
     std::map<std::string, std::ofstream> eventStreams;
     if (dumpEvents) {
-        std::filesystem::create_directories("CoincEvents");
+        std::filesystem::path eventsRoot("CoincEvents");
+        std::filesystem::path inputPath(filename);
+        // Use the stem (no extension) to avoid nesting directories based on full path.
+        std::filesystem::path perFileDir = eventsRoot / inputPath.stem();
+        if (inputPath.stem().empty())
+            perFileDir = eventsRoot;
+
+        std::filesystem::create_directories(perFileDir);
         auto openStream = [&](const std::string &label) {
             auto &stream = eventStreams[label];
-            stream.open("CoincEvents/" + label + ".csv");
+            const auto outPath = perFileDir / (label + ".csv");
+            stream.open(outPath);
             stream << "second,t1_ps,t2_ps\n";
         };
         for (const auto &p : samePairs)

@@ -49,7 +49,7 @@ appendNextFirstEvent(const std::vector<long long> &currentSecond,
                                           currentSecond.size());
     }
 
-    // Slow-path: we need to append the head of the next bucket to preserve
+    // Slow-path: need to append the head of the next bucket to preserve
     // possible coincidences that straddle the second boundary.
     scratch.assign(currentSecond.begin(), currentSecond.end());
     scratch.push_back(nextSecond.front());
