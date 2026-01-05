@@ -61,17 +61,12 @@ bash run_all_coincpairs.sh
 ```
 Edit the variables at the top to change the coincidence window, delay range, or start/stop seconds. Each run writes its own `CoincEvents/<file_stem>/rate.csv` plus event dumps.
 
-## Tests
-- C++ asserts: `./build/CoincFinderTests`
-- Rolling buffer sanity: `./build/Testing/TestRolling <sample.csv>`
-- Python smoke test for FFT helper: `python3 test_sqrt_fft_ifft.py` (writes `sqrt_fft_ifft_diagnostics.png`).
-
 ## Plotting event timing
 After running `CoincPairs --dump-events`, use:
 ```bash
 python3 Nicely_Plotted_various_diffs.py --event-dir CoincEvents --run <input_stem>
 ```
-This generates per-pair histograms, gap autocorr, and optional waveform reconstructions (phase retrieval and sqrt-FFT IFFT).
+This tries to generate per-pair histograms, gap autocorr, and optional waveform reconstructions (phase retrieval and sqrt-FFT IFFT).
 
 ## Troubleshooting
 - OpenMP missing: falls back to single-threaded; install an OpenMP-capable toolchain to speed up.
