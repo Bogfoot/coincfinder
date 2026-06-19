@@ -18,6 +18,7 @@ env/
 
 # Generated binaries
 coincfinder/build/
+QKDTestFMF3/
 *.so
 *.pyd
 *.dll
