@@ -1,12 +1,13 @@
 # Build artifacts
+build/
 /cpp/build/
-/build/
 /dist/
-docs/doxygen/
 docs/doxygen/
 *.egg-info
 *.pyc
 __pycache__/
+compile_commands.json
+.cache/
 
 # Virtual environments
 .venv/
@@ -25,10 +26,13 @@ QKDTestFMF3/
 *.lib
 *.exe
 
-# Data/logs
+# Data/logs/plots
 *.log
 *.bin
 *.csv
+*.txt
+*.zip
+*.png
 /2025-11-19_13_05_03_MDP_UVTP_exp_time_s_5.bin
 
 # Repo-local files
