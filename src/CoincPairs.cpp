@@ -35,8 +35,8 @@ struct DelayInfo {
 
 std::span<const long long> spanWithNext(const Singles &s, int second,
                                         std::vector<long long> &scratch) {
-    const auto &current = eventsForSecond(s, second);
-    const auto &next = eventsForSecond(s, second + 1);
+    const auto current = eventsForSecond(s, second);
+    const auto next = eventsForSecond(s, second + 1);
     return appendNextFirstEvent(current, next, scratch);
 }
 
@@ -44,7 +44,6 @@ DelayInfo bestDelayForPair(const Singles &s1, const Singles &s2,
                            int second, long long coincWindowPs,
                            long long delayStartPs, long long delayEndPs,
                            long long delayStepPs,
-                           std::vector<std::pair<float, int>> &scratchResults,
                            std::vector<long long> &scratch1,
                            std::vector<long long> &scratch2) {
     const auto span1 = spanWithNext(s1, second, scratch1);
@@ -52,13 +51,11 @@ DelayInfo bestDelayForPair(const Singles &s1, const Singles &s2,
     if (span1.empty() || span2.empty())
         return {};
 
-    const long long delayPs =
-        findBestDelayPicoseconds(span1, span2, coincWindowPs,
-                                 delayStartPs, delayEndPs, delayStepPs,
-                                 &scratchResults);
+    const auto result = findBestDelay(span1, span2, coincWindowPs,
+                                      delayStartPs, delayEndPs, delayStepPs);
     DelayInfo info;
-    info.delayPs = delayPs;
-    info.delayNs = static_cast<double>(delayPs) / 1000.0;
+    info.delayPs = result.bestDelayPs;
+    info.delayNs = static_cast<double>(result.bestDelayPs) / 1000.0;
     info.valid = true;
     return info;
 }
@@ -103,7 +100,8 @@ void print_help(const char *exe) {
         << "  - With --dump-events, writes CoincEvents/<pair>.csv containing raw timetag pairs.\n"
         << "Notes:\n"
         << "  - startSec/stopSec are clamped to available data seconds.\n"
-        << "  - delay_* in nanoseconds; window in picoseconds.\n";
+        << "  - delay_* in nanoseconds; window in picoseconds (full width, "
+           "centered on each delay).\n";
 }
 
 int main(int argc, char *argv[]) {
@@ -146,12 +144,10 @@ int main(int argc, char *argv[]) {
     long long earliestSec = std::numeric_limits<long long>::max();
     long long latestSec = std::numeric_limits<long long>::min();
     for (auto &[ch, singles] : singlesMap) {
-        if (singles.eventsPerSecond.empty())
+        if (singles.events.empty())
             continue;
-        earliestSec = std::min(earliestSec, singles.baseSecond);
-        long long last = singles.baseSecond +
-                         static_cast<long long>(singles.eventsPerSecond.size()) - 1;
-        latestSec = std::max(latestSec, last);
+        earliestSec = std::min(earliestSec, firstSecond(singles));
+        latestSec = std::max(latestSec, lastSecond(singles));
     }
     if (earliestSec == std::numeric_limits<long long>::max()) {
         std::cerr << "No singles data found.\n";
@@ -194,14 +190,13 @@ int main(int argc, char *argv[]) {
 
     // Compute best delays using the first available second in-range (startSec)
     std::map<std::string, DelayInfo> delays;
-    std::vector<std::pair<float, int>> scratchResults;
     std::vector<long long> scratch1, scratch2;
     for (const auto &p : samePairs) {
         const Singles &s1 = singlesMap.at(p.ch1);
         const Singles &s2 = singlesMap.at(p.ch2);
         DelayInfo d = bestDelayForPair(s1, s2, startSec, coincWindowPs,
                                        delayStartPs, delayEndPs, delayStepPs,
-                                       scratchResults, scratch1, scratch2);
+                                       scratch1, scratch2);
         if (d.valid) {
             delays[p.label] = d;
             std::cout << "Delay " << p.label << ": " << d.delayNs << " ns\n";

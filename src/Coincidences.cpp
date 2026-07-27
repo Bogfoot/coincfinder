@@ -7,11 +7,10 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 
 namespace {
-constexpr long long kPicosecondsPerNanosecond = 1000LL;
-
 struct DelayScanConfig {
   // All members are stored in picoseconds to avoid repeated conversions.
   long long startPs = 0;
@@ -35,8 +34,8 @@ DelayScanConfig buildConfig(long long delayStartPs, long long delayEndPs,
 } // namespace
 
 std::span<const long long>
-appendNextFirstEvent(const std::vector<long long> &currentSecond,
-                     const std::vector<long long> &nextSecond,
+appendNextFirstEvent(std::span<const long long> currentSecond,
+                     std::span<const long long> nextSecond,
                      std::vector<long long> &scratch) {
   // Fast-path: when there's nothing in the next bucket we can just return a
   // span over the original memory—no copies, no allocations.
@@ -45,8 +44,7 @@ appendNextFirstEvent(const std::vector<long long> &currentSecond,
       scratch.clear();
       return {};
     }
-    return std::span<const long long>(currentSecond.data(),
-                                      currentSecond.size());
+    return currentSecond;
   }
 
   // Slow-path: need to append the head of the next bucket to preserve
@@ -62,8 +60,9 @@ int countCoincidencesWithDelay(
     std::span<const long long> ch1, std::span<const long long> ch2,
     long long coincWindowPs, long long delayPs,
     std::vector<std::pair<long long, long long>> *outHits) {
-  const long long lowerBound = -coincWindowPs;
-  const long long upperBound = coincWindowPs;
+  const long long halfWindow = coincWindowPs / 2;
+  const long long lowerBound = -halfWindow;
+  const long long upperBound = halfWindow;
 
   int count = 0;
   size_t i = 0;
@@ -172,36 +171,33 @@ int countNFoldCoincidences(
   return coincidences;
 }
 
-void computeCoincidencesForRange(std::span<const long long> channel1,
-                                 std::span<const long long> channel2,
-                                 long long coincWindowPs,
-                                 long long delayStartPs, long long delayEndPs,
-                                 long long delayStepPs,
-                                 std::vector<std::pair<float, int>> &results) {
-  results.clear();
+DelayScan scanDelays(std::span<const long long> channel1,
+                     std::span<const long long> channel2,
+                     long long coincWindowPs,
+                     long long delayStartPs, long long delayEndPs,
+                     long long delayStepPs) {
+  DelayScan scan;
   const DelayScanConfig config =
       buildConfig(delayStartPs, delayEndPs, delayStepPs);
   if (config.steps == 0)
-    return;
+    return scan;
 
-  results.resize(config.steps);
-  if (channel1.empty() || channel2.empty()) {
-    // Exit when either channel has no events.
-    for (size_t idx = 0; idx < config.steps; ++idx) {
-      const long long delayPs =
-          config.startPs + static_cast<long long>(idx) * config.stepPs;
-      results[idx] = {static_cast<float>(delayPs) / kPicosecondsPerNanosecond,
-                      0};
-    }
-    return;
-  }
+  scan.delaysPs.resize(config.steps);
+  scan.counts.assign(config.steps, 0);
+  for (size_t idx = 0; idx < config.steps; ++idx)
+    scan.delaysPs[idx] = static_cast<double>(
+        config.startPs + static_cast<long long>(idx) * config.stepPs);
+
+  if (channel1.empty() || channel2.empty())
+    return scan; // counts already zero-initialized
 
   // Difference array (size = steps + 1 so "end + 1" stays in-bounds).
   std::vector<long long> diff(config.steps + 1, 0);
   size_t jLo = 0;
   size_t jHi = 0;
-  const long long minNeeded = config.startPs - coincWindowPs;
-  const long long maxNeeded = config.endPs + coincWindowPs;
+  const long long halfWindow = coincWindowPs / 2;
+  const long long minNeeded = config.startPs - halfWindow;
+  const long long maxNeeded = config.endPs + halfWindow;
 
   for (const long long t1 : channel1) {
     // Keep channel2[jLo:jHi) aligned with timestamps that can still
@@ -218,8 +214,8 @@ void computeCoincidencesForRange(std::span<const long long> channel1,
 
     for (size_t j = jLo; j < jHi; ++j) {
       const long long diffCenter = t1 - channel2[j];
-      long long intervalStart = diffCenter - coincWindowPs;
-      long long intervalEnd = diffCenter + coincWindowPs;
+      long long intervalStart = diffCenter - halfWindow;
+      long long intervalEnd = diffCenter + halfWindow;
       if (intervalEnd < config.startPs || intervalStart > config.endPs)
         continue;
       intervalStart = std::max(intervalStart, config.startPs);
@@ -244,44 +240,146 @@ void computeCoincidencesForRange(std::span<const long long> channel1,
   long long running = 0;
   for (size_t idx = 0; idx < config.steps; ++idx) {
     running += diff[idx];
-    const long long delayPs =
-        config.startPs + static_cast<long long>(idx) * config.stepPs;
-    results[idx] = {static_cast<float>(delayPs) / kPicosecondsPerNanosecond,
-                    static_cast<int>(running)};
+    scan.counts[idx] = running;
   }
+  return scan;
 }
 
-long long findBestDelayPicoseconds(
-    std::span<const long long> reference, std::span<const long long> target,
-    long long coincWindowPs, long long delayStartPs, long long delayEndPs,
-    long long delayStepPs, std::vector<std::pair<float, int>> *scratchResults) {
-  std::vector<std::pair<float, int>> local;
-  std::vector<std::pair<float, int>> &results =
-      scratchResults ? *scratchResults : local;
-  computeCoincidencesForRange(reference, target, coincWindowPs, delayStartPs,
-                              delayEndPs, delayStepPs, results);
-  long long bestDelayPs = delayStartPs;
-  int bestCount = std::numeric_limits<int>::min();
-  for (const auto &entry : results) {
-    const long long delayPs = static_cast<long long>(
-        std::llround(static_cast<double>(entry.first) *
-                     static_cast<double>(kPicosecondsPerNanosecond)));
-    if (entry.second > bestCount) {
-      bestCount = entry.second;
-      bestDelayPs = delayPs;
+BestDelayResult findBestDelay(std::span<const long long> reference,
+                              std::span<const long long> target,
+                              long long coincWindowPs,
+                              long long delayStartPs, long long delayEndPs,
+                              long long delayStepPs) {
+  BestDelayResult result;
+  result.scan = scanDelays(reference, target, coincWindowPs, delayStartPs,
+                           delayEndPs, delayStepPs);
+  result.bestDelayPs = delayStartPs;
+  long long bestCount = std::numeric_limits<long long>::min();
+  for (size_t idx = 0; idx < result.scan.counts.size(); ++idx) {
+    if (result.scan.counts[idx] > bestCount) {
+      bestCount = result.scan.counts[idx];
+      result.bestDelayPs =
+          static_cast<long long>(std::llround(result.scan.delaysPs[idx]));
     }
   }
-  return bestDelayPs;
+  return result;
 }
 
-void writeResultsToFile(const std::vector<std::pair<float, int>> &results,
-                        const std::string &filename) {
+namespace {
+// Picks the delay at the centre of the widest run of bins tied for the
+// highest count. Returns nullopt when the scan is empty or every bin is zero.
+std::optional<double> bestDelayFromScan(const DelayScan &scan) {
+  if (scan.delaysPs.empty())
+    return std::nullopt;
+
+  const long long best = *std::max_element(scan.counts.begin(), scan.counts.end());
+  if (best <= 0)
+    return std::nullopt;
+
+  size_t bestRunStart = 0;
+  size_t bestRunLen = 0;
+  size_t i = 0;
+  while (i < scan.counts.size()) {
+    if (scan.counts[i] != best) {
+      ++i;
+      continue;
+    }
+    const size_t start = i;
+    while (i < scan.counts.size() && scan.counts[i] == best)
+      ++i;
+    if (i - start > bestRunLen) {
+      bestRunStart = start;
+      bestRunLen = i - start;
+    }
+  }
+
+  const size_t lastIdx = bestRunStart + bestRunLen - 1;
+  return (scan.delaysPs[bestRunStart] + scan.delaysPs[lastIdx]) / 2.0;
+}
+} // namespace
+
+TwoStageDelayResult findBestDelayTwoStage(std::span<const long long> reference,
+                                          std::span<const long long> target,
+                                          long long windowPs,
+                                          long long coarseWindowPs,
+                                          long long coarseHalfRangePs,
+                                          long long coarseStepPs,
+                                          long long fineHalfRangePs,
+                                          long long fineStepPs) {
+  TwoStageDelayResult result;
+
+  const DelayScan coarseScan =
+      scanDelays(reference, target, coarseWindowPs, -coarseHalfRangePs,
+                coarseHalfRangePs, coarseStepPs);
+  const std::optional<double> coarseBest = bestDelayFromScan(coarseScan);
+  if (!coarseBest)
+    return result;
+
+  const long long center = static_cast<long long>(std::llround(*coarseBest));
+  result.fineScan = scanDelays(reference, target, windowPs,
+                               center - fineHalfRangePs,
+                               center + fineHalfRangePs, fineStepPs);
+  const std::optional<double> fineBest = bestDelayFromScan(result.fineScan);
+  result.bestDelayPs = fineBest ? fineBest : coarseBest;
+  return result;
+}
+
+WindowEstimate estimateCoincidenceWindow(std::span<const long long> channel1,
+                                         std::span<const long long> channel2,
+                                         long long delayPs, long long spanPs,
+                                         long long binPs) {
+  WindowEstimate result;
+  // A window of one bin width means each pair lands in essentially the one
+  // bin closest to its true (channel1 - channel2) difference, giving a
+  // near-unsmoothed histogram of the raw timing peak rather than the
+  // coincidence *counts at a window* that scanDelays is normally used for.
+  // Clamp so the half-width scanDelays derives from this is never zero.
+  const long long binWindowPs = std::max<long long>(2, binPs);
+  result.histogram =
+      scanDelays(channel1, channel2, binWindowPs, delayPs - spanPs,
+                delayPs + spanPs, binPs);
+  const std::vector<long long> &counts = result.histogram.counts;
+  if (counts.empty())
+    return result;
+
+  const size_t peakIdx = static_cast<size_t>(
+      std::max_element(counts.begin(), counts.end()) - counts.begin());
+  result.peakCount = counts[peakIdx];
+
+  // Background: median count in the outer eighth of bins on each side, as a
+  // robust stand-in for the accidental-coincidence floor.
+  const size_t edge = std::max<size_t>(1, counts.size() / 8);
+  std::vector<long long> tails;
+  tails.insert(tails.end(), counts.begin(), counts.begin() + static_cast<long>(edge));
+  tails.insert(tails.end(), counts.end() - static_cast<long>(edge), counts.end());
+  std::sort(tails.begin(), tails.end());
+  result.backgroundCount = static_cast<double>(tails[tails.size() / 2]);
+
+  if (result.peakCount <= result.backgroundCount)
+    return result; // no discernible peak above background
+
+  const double halfMax =
+      result.backgroundCount +
+      (static_cast<double>(result.peakCount) - result.backgroundCount) / 2.0;
+
+  size_t lo = peakIdx;
+  while (lo > 0 && static_cast<double>(counts[lo]) >= halfMax)
+    --lo;
+  size_t hi = peakIdx;
+  while (hi + 1 < counts.size() && static_cast<double>(counts[hi]) >= halfMax)
+    ++hi;
+
+  result.fwhmPs = result.histogram.delaysPs[hi] - result.histogram.delaysPs[lo];
+  result.windowPs = result.fwhmPs; // window is a full width, same as fwhmPs
+  return result;
+}
+
+void writeResultsToFile(const DelayScan &scan, const std::string &filename) {
   std::ofstream out(filename);
   if (!out.is_open()) {
     std::cerr << "Error opening file: " << filename << std::endl;
     return;
   }
-  for (auto &p : results)
-    out << p.first << "," << p.second << "\n";
-  out.close();
+  for (size_t idx = 0; idx < scan.delaysPs.size(); ++idx)
+    out << scan.delaysPs[idx] << "," << scan.counts[idx] << "\n";
 }

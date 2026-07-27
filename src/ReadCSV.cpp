@@ -1,7 +1,7 @@
 #include "ReadCSV.h"
 
-// CSV/BIN ingestion helpers. They construct `Singles` objects in-place so the
-// rest of the pipeline can treat every per-second bucket as an owning vector.
+// CSV/BIN ingestion helpers. They construct `Singles` objects in-place,
+// inserting each timestamp directly into its channel's flat sorted buffer.
 
 #include <algorithm>
 #include <array>
@@ -18,25 +18,6 @@ constexpr long long kPicosecondsPerSecond = 1'000'000'000'000LL;
 constexpr int kMaxChannels = 8;
 
 std::atomic<double> gBucketSeconds{1.0};
-
-inline long long bucketIndex(Timestamp ts, Timestamp firstTimestamp,
-                             long long bucketWidthPs) {
-  if (bucketWidthPs <= 0)
-    bucketWidthPs = kPicosecondsPerSecond;
-  return static_cast<long long>((ts - firstTimestamp) / bucketWidthPs);
-}
-
-inline void appendTimestamp(Singles &singles, long long second, Timestamp ts) {
-  // Buckets must stay sorted because the coincidence scan assumes monotonic
-  // timestamps. `ensureSecond` gives us a mutable reference to the bucket.
-  auto &bucket = ensureSecond(singles, second);
-  if (!bucket.empty() && ts < bucket.back()) {
-    const auto pos = std::upper_bound(bucket.begin(), bucket.end(), ts);
-    bucket.insert(pos, ts);
-  } else {
-    bucket.push_back(ts);
-  }
-}
 
 template <typename T> bool parseIntegral(std::string_view token, T &value) {
   // Lightweight, locale-free parser so the loop stays allocation-free.
@@ -60,7 +41,7 @@ std::map<int, Singles>
 finalizeSingles(std::array<Singles, kMaxChannels + 1> &channels) {
   std::map<int, Singles> result;
   for (int ch = 1; ch <= kMaxChannels; ++ch) {
-    if (!channels[ch].eventsPerSecond.empty()) {
+    if (!channels[ch].events.empty()) {
       result.emplace(ch, std::move(channels[ch]));
     }
   }
@@ -100,16 +81,18 @@ std::map<int, Singles> readCSVtoSingles(const std::string &filename,
     throw std::runtime_error("Cannot open CSV file: " + filename);
 
   std::array<Singles, kMaxChannels + 1> channels;
-  for (int ch = 1; ch <= kMaxChannels; ++ch)
+  const long long bucketWidthPs = static_cast<long long>(
+      std::llround(bucketDurationSeconds() * kPicosecondsPerSecond));
+  for (int ch = 1; ch <= kMaxChannels; ++ch) {
     channels[ch].channel = ch;
+    channels[ch].bucketWidthPs = bucketWidthPs;
+  }
 
   std::string line;
   Timestamp firstTimestamp = 0;
   bool first = true;
   long long minTime = LLONG_MAX;
   long long maxTime = 0;
-  const long long bucketWidthPs = static_cast<long long>(
-      std::llround(bucketDurationSeconds() * kPicosecondsPerSecond));
 
   while (std::getline(file, line)) {
     if (line.empty())
@@ -140,9 +123,8 @@ std::map<int, Singles> readCSVtoSingles(const std::string &filename,
       firstTimestamp = ts;
       first = false;
     }
-    const long long sec = bucketIndex(ts, firstTimestamp, bucketWidthPs);
 
-    appendTimestamp(channels[ch], sec, ts - firstTimestamp);
+    insertSorted(channels[ch], ts - firstTimestamp);
 
     if (ts < minTime)
       minTime = ts;
@@ -163,8 +145,12 @@ std::map<int, Singles> readBINtoSingles(const std::string &filename,
   file.seekg(40, std::ios::beg);
 
   std::array<Singles, kMaxChannels + 1> channels;
-  for (int ch = 1; ch <= kMaxChannels; ++ch)
+  const long long bucketWidthPs = static_cast<long long>(
+      std::llround(bucketDurationSeconds() * kPicosecondsPerSecond));
+  for (int ch = 1; ch <= kMaxChannels; ++ch) {
     channels[ch].channel = ch;
+    channels[ch].bucketWidthPs = bucketWidthPs;
+  }
 
   uint64_t t_raw = 0;
   uint16_t c_raw = 0;
@@ -172,8 +158,6 @@ std::map<int, Singles> readBINtoSingles(const std::string &filename,
   bool first = true;
   long long minTime = LLONG_MAX;
   long long maxTime = 0;
-  const long long bucketWidthPs = static_cast<long long>(
-      std::llround(bucketDurationSeconds() * kPicosecondsPerSecond));
 
   while (file.read(reinterpret_cast<char *>(&t_raw), sizeof(t_raw))) {
     if (!file.read(reinterpret_cast<char *>(&c_raw), sizeof(c_raw)))
@@ -189,8 +173,7 @@ std::map<int, Singles> readBINtoSingles(const std::string &filename,
       first = false;
     }
 
-    const long long sec = bucketIndex(ts, firstTimestamp, bucketWidthPs);
-    appendTimestamp(channels[ch], sec, ts - firstTimestamp);
+    insertSorted(channels[ch], ts - firstTimestamp);
 
     if (ts < minTime)
       minTime = ts;

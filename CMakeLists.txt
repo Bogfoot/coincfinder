@@ -13,7 +13,6 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_library(coincfinder_core STATIC
     src/Coincidences.cpp
     src/ReadCSV.cpp
-    src/RollingSingles.cpp
 )
 target_include_directories(coincfinder_core PUBLIC include)
 target_compile_features(coincfinder_core PUBLIC cxx_std_20)
@@ -36,9 +35,6 @@ if(COINCFINDER_BUILD_TESTS)
   add_executable(CoincFinderTests src/CoincFinderTests.cpp)
   target_link_libraries(CoincFinderTests PRIVATE coincfinder_core)
   add_test(NAME coincfinder_unit COMMAND CoincFinderTests)
-
-  add_executable(TestRolling Testing/TestRolling.cpp)
-  target_link_libraries(TestRolling PRIVATE coincfinder_core)
 endif()
 
 # Python bindings
@@ -49,6 +45,11 @@ if(COINCFINDER_BUILD_PYTHON)
   endif()
   pybind11_add_module(coincfinder_py src/bindings.cpp)
   target_link_libraries(coincfinder_py PRIVATE coincfinder_core)
+  # PYBIND11_MODULE(coincfinder, ...) in bindings.cpp registers the module as
+  # "coincfinder" - the built file must be named to match, or `import
+  # coincfinder` silently falls through to whatever stale copy is on
+  # sys.path/site-packages instead of this build.
+  set_target_properties(coincfinder_py PROPERTIES OUTPUT_NAME "coincfinder")
 endif()
 
 # Copy helper Python scripts to the build output for quick use with the .pyd/.so

@@ -25,22 +25,6 @@ MAX_BINS = 200
 USE_LOG_X = True
 
 
-def flatten_channel(singles) -> np.ndarray:
-    total = sum(len(bucket) for bucket in singles.events_per_second)
-    if total == 0:
-        return np.empty(0, dtype=np.int64)
-
-    flat = np.empty(total, dtype=np.int64)
-    offset = 0
-    for bucket in singles.events_per_second:
-        size = len(bucket)
-        if size == 0:
-            continue
-        flat[offset : offset + size] = bucket
-        offset += size
-    return flat
-
-
 def compute_consecutive_diffs(times_ps: np.ndarray) -> np.ndarray:
     if times_ps.size < 2:
         return np.empty(0, dtype=np.int64)
@@ -109,15 +93,15 @@ def main() -> None:
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    singles_map, duration_sec = cf.read_file_auto(str(INPUT_FILE), EXPOSURE_SECONDS)
+    channels, duration_sec = cf.read_channels(str(INPUT_FILE), EXPOSURE_SECONDS)
     print(
         f"Loaded {INPUT_FILE} with duration {duration_sec:.3f} s "
-        f"across channels {sorted(singles_map.keys())}"
+        f"across channels {sorted(channels.keys())}"
     )
 
     summary_rows = []
-    for channel in sorted(singles_map.keys()):
-        times_ps = flatten_channel(singles_map[channel])
+    for channel in sorted(channels.keys()):
+        times_ps = channels[channel]
         diffs_ps = compute_consecutive_diffs(times_ps)
 
         out_png = OUTPUT_DIR / f"channel_{channel}_consecutive_diffs.png"

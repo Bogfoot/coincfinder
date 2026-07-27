@@ -24,13 +24,10 @@ bool clampRange(const std::map<int, Singles> &singlesMap, int &startSec,
     long long earliestSec = std::numeric_limits<long long>::max();
     long long latestSec = std::numeric_limits<long long>::min();
     for (auto &[ch, singles] : singlesMap) {
-        if (singles.eventsPerSecond.empty())
+        if (singles.events.empty())
             continue;
-        earliestSec = std::min(earliestSec, singles.baseSecond);
-        long long last =
-            singles.baseSecond +
-            static_cast<long long>(singles.eventsPerSecond.size()) - 1;
-        latestSec = std::max(latestSec, last);
+        earliestSec = std::min(earliestSec, firstSecond(singles));
+        latestSec = std::max(latestSec, lastSecond(singles));
     }
     if (earliestSec == std::numeric_limits<long long>::max())
         return false;
@@ -52,7 +49,8 @@ void print_help(const char *exe) {
         << "  Delay_Scan_Data/delay_scan_<ch1>_vs_<ch2>_second_<sec>.csv\n"
         << "Notes:\n"
         << "  - <startSec>/<stopSec> are clamped to available data seconds.\n"
-        << "  - delay_* in nanoseconds; window in picoseconds.\n";
+        << "  - delay_* in nanoseconds; window in picoseconds (full width, "
+           "centered on each delay).\n";
 }
 
 int main(int argc, char *argv[]) {
@@ -160,16 +158,15 @@ int main(int argc, char *argv[]) {
     const Singles &singles2 = singlesMap.at(ch2);
 
     std::vector<long long> mergedEvents;
-    std::vector<std::pair<float, int>> results;
     size_t filesWritten = 0;
     for (int sec = startSec; sec <= stopSec; ++sec) {
 
-      const auto &events1 = eventsForSecond(singles1, sec);
-      if (events1.empty())
+      const auto channel1Span = eventsForSecond(singles1, sec);
+      if (channel1Span.empty())
         continue;
 
-      const auto &currentSecond = eventsForSecond(singles2, sec);
-      const auto &nextSecond = eventsForSecond(singles2, sec + 1);
+      const auto currentSecond = eventsForSecond(singles2, sec);
+      const auto nextSecond = eventsForSecond(singles2, sec + 1);
       if (currentSecond.empty() && nextSecond.empty())
         continue;
 
@@ -180,18 +177,13 @@ int main(int argc, char *argv[]) {
       if (channel2Span.empty())
         continue;
 
-      const std::span<const long long> channel1Span(events1.data(),
-                                                    events1.size());
-
       std::string outFile = "Delay_Scan_Data/delay_scan_" +
                             std::to_string(ch1) + "_vs_" + std::to_string(ch2) +
                             "_second_" + std::to_string(sec) + ".csv";
 
-      results.clear();
-      computeCoincidencesForRange(channel1Span, channel2Span, coincWindow,
-                                  delayStartPs, delayEndPs, delayStepPs,
-                                  results);
-      writeResultsToFile(results, outFile);
+      const DelayScan scan = scanDelays(channel1Span, channel2Span, coincWindow,
+                                        delayStartPs, delayEndPs, delayStepPs);
+      writeResultsToFile(scan, outFile);
       ++filesWritten;
 
       int done = ++jobsDone;
@@ -220,11 +212,8 @@ int main(int argc, char *argv[]) {
 
   long long maxSec = 0;
   for (auto &[ch, s] : singlesMap)
-    if (!s.eventsPerSecond.empty()) {
-      long long lastSecond =
-          s.baseSecond + static_cast<long long>(s.eventsPerSecond.size()) - 1;
-      maxSec = std::max(maxSec, lastSecond);
-    }
+    if (!s.events.empty())
+      maxSec = std::max(maxSec, lastSecond(s));
 
   for (long long sec = 0; sec <= maxSec; ++sec) {
     std::cout << sec;

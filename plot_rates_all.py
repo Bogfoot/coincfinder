@@ -49,7 +49,7 @@ def main():
     # Determine available seconds
     available_seconds = set()
     for s in singles_map.values():
-        available_seconds.update(range(s.base_second, s.base_second + len(s.events_per_second)))
+        available_seconds.update(range(s.first_second(), s.last_second() + 1))
     available_seconds = sorted(available_seconds)
     if not available_seconds:
         raise SystemExit("No data seconds found.")
@@ -63,16 +63,12 @@ def main():
     for lbl, c1, c2 in SAME:
         if c1 not in singles_map or c2 not in singles_map:
             continue
-        s1 = singles_map[c1]
-        s2 = singles_map[c2]
-        idx1 = calib_sec - s1.base_second
-        idx2 = calib_sec - s2.base_second
-        if not (0 <= idx1 < len(s1.events_per_second) and 0 <= idx2 < len(s2.events_per_second)):
+        ch1 = singles_map[c1].events_for_second(calib_sec)
+        ch2 = singles_map[c2].events_for_second(calib_sec)
+        if ch1.size == 0 or ch2.size == 0:
             continue
-        ch1 = np.array(s1.events_per_second[idx1], dtype=np.int64)
-        ch2 = np.array(s2.events_per_second[idx2], dtype=np.int64)
-        best = cf.find_best_delay_np(ch1, ch2, args.coinc_window_ps,
-                                     delay_start_ps, delay_end_ps, delay_step_ps)
+        best, _, _ = cf.find_best_delay(ch1, ch2, args.coinc_window_ps,
+                                        delay_start_ps, delay_end_ps, delay_step_ps)
         delays_ns[lbl] = best / 1000.0
         print(f"{lbl} best delay: {delays_ns[lbl]:.3f} ns (calib sec {calib_sec})")
 
@@ -87,22 +83,14 @@ def main():
     rows = []
     singles_per_sec = {ch: [] for ch in singles_map.keys()}
 
-    # Precompute which channels we actually need
-    needed_channels = set(ch for _, ch1, ch2 in SAME for ch in (ch1, ch2))
-    needed_channels.update(ch for _, ch1, ch2, _ in CROSS for ch in (ch1, ch2))
-
     for sec in seconds:
         row = {"second": sec}
 
         # Gather buckets once per second for needed channels
         buckets = {}
         for ch, s in singles_map.items():
-            idx = sec - s.base_second
-            if 0 <= idx < len(s.events_per_second):
-                buckets[ch] = s.events_per_second[idx]
-            else:
-                buckets[ch] = []
-            singles_per_sec[ch].append(len(buckets[ch]))
+            buckets[ch] = s.events_for_second(sec)
+            singles_per_sec[ch].append(buckets[ch].size)
 
         # Same + cross pairs in one pass using a list
         all_pairs = []
@@ -116,14 +104,12 @@ def main():
                 row[f"{lbl}_coinc"] = np.nan
                 continue
             delay_ps = int(delays_ns[base] * 1000)
-            ch1_list = buckets[c1]
-            ch2_list = buckets[c2]
-            if len(ch1_list) == 0 or len(ch2_list) == 0:
+            ch1 = buckets[c1]
+            ch2 = buckets[c2]
+            if ch1.size == 0 or ch2.size == 0:
                 row[f"{lbl}_coinc"] = np.nan
                 continue
-            ch1 = np.array(ch1_list, dtype=np.int64)
-            ch2 = np.array(ch2_list, dtype=np.int64)
-            row[f"{lbl}_coinc"] = cf.count_coincidences_with_delay_np(
+            row[f"{lbl}_coinc"] = cf.count_coincidences(
                 ch1, ch2, args.coinc_window_ps, delay_ps)
 
         hh = row.get("HH_coinc") or 0
