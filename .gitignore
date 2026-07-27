@@ -32,7 +32,6 @@ QKDTestFMF3/
 /2025-11-19_13_05_03_MDP_UVTP_exp_time_s_5.bin
 
 # Repo-local files
-AGENTS.md
 8hMeasurement/
 qber_live_log.csv
 pyproject.toml
